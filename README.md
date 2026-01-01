@@ -1,215 +1,192 @@
 # Portfolio Analyzer
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+A practical, opinionated toolkit for Indian stock investors: run a quick check on your Zerodha/Groww holdings, or scan the market for setups worth putting on a watchlist. It's built to answer the everyday question: *"What should I look at first, and what should I ignore?"*
 
-AI-powered stock portfolio analyzer **and scanner** for Indian markets. Analyze your existing holdings (Zerodha/Groww) with technical indicators, fundamental research, news sentiment, and legal signals—or discover new opportunities with the built-in stock scanner.
-<img width="1113" height="603" alt="Screenshot 2026-01-01 at 8 57 11 PM" src="https://github.com/user-attachments/assets/78b377b9-4848-4321-8e69-3af09bd39c68" />
-<img width="423" height="524" alt="Screenshot 2026-01-01 at 8 56 56 PM" src="https://github.com/user-attachments/assets/05fd1a5a-fa04-4f04-84b1-4e47e4fc9de8" />
+**MIT License · Python 3.13+**
 
+> This is a personal hobby project. It's not production software, and it's not financial advice. Treat it as a second opinion, then do your own homework.
 
-## Features
+## Who It's For
 
-### Portfolio Analysis
-- **CSV Import** - Drop your Zerodha or Groww holdings CSV
-- **Technical Analysis** - RSI, MACD, SMA, Bollinger Bands, ADX
-- **Fundamental Research** - Quarterly results, P/E ratios, growth metrics
-- **News Sentiment** - Recent news, analyst ratings, target prices
-- **Legal Signals** - SEBI issues, lawsuits, major contracts
-- **Hardened Scoring** - Conservative recommendations with safety gates
+- You already have a **Zerodha or Groww portfolio** and want a disciplined, repeatable "sanity check" instead of gut-feel.
+- You like **technical signals** (RSI, MACD, trend) but don't want to manually pull charts for 20–50 stocks.
+- You **scan for candidates**—oversold bounces, crossovers, breakouts—and want a simple pipeline to shortlist and track them.
+- You're the **"tinker and extend" type** and want a working end-to-end setup you can fork and customize with your own rules.
 
-### Stock Scanner
-- **Multi-Signal Scanning** - RSI oversold, MACD crossover, Golden Cross, volume breakouts, 52-week highs
-- **Watchlist Tracking** - Add promising stocks, track entry prices
-- **Performance Reports** - Monitor returns on your picks over time
-- **Technical Verification** - Full analysis before committing to watchlist
+## What You Get
 
----
+- A **ranked view of your holdings** with simple recommendations (BUY / HOLD / SELL) plus a confidence level, so you know what deserves attention.
+- **Technical analysis** across the core indicators (RSI, MACD, SMA trend, Bollinger context, ADX strength, volume confirmation).
+- **Lightweight fundamental and narrative context** pulled via AI web research (results, valuation, growth) so the output isn't just numbers.
+- **News + legal/corporate signals** rolled up into a "anything weird going on?" layer.
+- A **stock scanner** for common setups (RSI oversold, MACD crossover, golden cross, volume breakouts, 52-week strength).
+- A **watchlist flow**: add a pick, record an entry price + reason, and track performance over time.
 
-## Scoring Philosophy at a Glance
+## Demo
 
-```
-                    PORTFOLIO ANALYZER SCORING SYSTEM
-    ================================================================
+<img width="1113" alt="Dashboard showing portfolio analysis with scores and recommendations" src="https://github.com/user-attachments/assets/78b377b9-4848-4321-8e69-3af09bd39c68" />
 
-    STRATEGY: Medium-Term Trend-Following (1-3 months)
-    INTENT:   Conservative BUY signals, avoid falling knives
+<details>
+<summary>More screenshots</summary>
 
-    ┌─────────────────────────────────────────────────────────────┐
-    │                    SIGNAL FLOW                              │
-    │                                                             │
-    │   RAW SCORES          GATES              FINAL OUTPUT       │
-    │   ──────────         ──────              ────────────       │
-    │                                                             │
-    │   Technical ─35%─┐                                          │
-    │                  │    ┌──────────────┐                      │
-    │   Fundamental 30%├───>│ SAFETY GATES │───> Recommendation   │
-    │                  │    │              │     + Confidence     │
-    │   News ─────20%──┤    │ - Trend < 5? │                      │
-    │                  │    │ - ADX weak?  │                      │
-    │   Legal ────15%──┘    │ - Hype only? │                      │
-    │                       └──────────────┘                      │
-    └─────────────────────────────────────────────────────────────┘
+<img width="423" alt="Stock detail view showing technical indicators" src="https://github.com/user-attachments/assets/05fd1a5a-fa04-4f04-84b1-4e47e4fc9de8" />
 
-    INDICATOR ROLES:
-    ┌────────────────────────────────────────────────────────────┐
-    │  Trend (SMA)  ████████████  PRIMARY GATE - Must confirm    │
-    │  ADX          ████████░░░░  Strength qualifier             │
-    │  MACD         ████████░░░░  Momentum confirmation          │
-    │  RSI          ████░░░░░░░░  Entry timing only              │
-    │  Bollinger    ████░░░░░░░░  Pullback context only          │
-    │  Volume       ████░░░░░░░░  Breakout confirmation          │
-    └────────────────────────────────────────────────────────────┘
-
-    HARD GATES (Non-Negotiable):
-    ┌────────────────────────────────────────────────────────────┐
-    │  Trend < 5         →  Max recommendation: HOLD             │
-    │  ADX weak + low vol →  Max recommendation: HOLD            │
-    │  High news, low tech → Downgrade BUY to HOLD               │
-    │  STRONG BUY needs   →  Trend >= 7, MACD >= 6, ADX >= 6     │
-    └────────────────────────────────────────────────────────────┘
-
-    CONFIDENCE LEVELS:
-    ┌────────────────────────────────────────────────────────────┐
-    │  ●●● HIGH    All signals aligned                           │
-    │  ●●○ MEDIUM  Partial alignment                             │
-    │  ●○○ LOW     Conflicting signals or weak trend             │
-    └────────────────────────────────────────────────────────────┘
-```
+</details>
 
 ---
 
-## Quick Start
+## Quickstart (60 seconds)
 
-### 1. Setup
+### Prerequisites
+
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) — required (orchestrates the AI agents)
+- [uv](https://github.com/astral-sh/uv) — Python package manager
+- Python 3.13+
+
+### Setup
 
 ```bash
+git clone https://github.com/yourusername/portfolio-analyzer.git
 cd portfolio-analyzer
 uv sync
 ```
 
-### 2. Add Your Portfolio
+### Run Portfolio Analysis
 
-Export your holdings CSV from your broker and place it in the `input/` folder:
+1. Export your holdings CSV from your broker:
+   - **Zerodha:** Console → Portfolio → Holdings → Download CSV
+   - **Groww:** Stocks → Holdings → Export
 
-- **Zerodha:** Console → Portfolio → Holdings → Download CSV
-- **Groww:** Stocks → Holdings → Export
-
-### 3. Run Analysis
-
-Start Claude Code:
+2. Place the CSV in `input/` and start Claude Code:
 
 ```bash
 claude
 ```
 
-Then say:
+3. Tell Claude to analyze:
 
 ```
 analyze my portfolio from input/your_holdings.csv
 ```
 
-### 4. View Results
-
-Results are saved to `output/analysis_YYYYMMDD_HHMMSS.csv`
-
-**Interactive Dashboard:**
-1. Open `dashboard/index.html` in your browser
-2. Click "Select CSV File" and load your analysis CSV
-3. View charts, sort by score, and click rows for details
-
-## What Happens
+### Run Stock Scanner
 
 ```
-1. Parse your CSV → extract holdings
-2. Fetch OHLCV data from Yahoo Finance (sequential with throttling)
-3. For each stock, run 4 analyses in parallel:
-   - Technical indicators (RSI, MACD, SMA, Bollinger, ADX)
-   - Fundamental research (quarterly results, P/E, growth)
-   - News sentiment (recent news, analyst ratings)
-   - Legal/corporate signals (SEBI, lawsuits, contracts)
-4. Score each stock
-5. Generate final report with recommendations
+run stock scanner
 ```
+
+### Open Dashboard
+
+Open `dashboard/index.html` in your browser, then load your analysis CSV.
 
 ---
 
-## Stock Scanner
+## Two Ways to Use
 
-Discover new investment opportunities by scanning for technical signals across NSE stocks.
+### A) Analyze Your Holdings
 
-### Run a Scan
+Best for: checking portfolio health, getting sell/hold/buy signals on stocks you own.
 
 ```
-> run stock scanner
-
-Launching 5 parallel scan agents...
-  - RSI Oversold: Found 12 stocks
-  - MACD Crossover: Found 8 stocks
-  - Golden Cross: Found 10 stocks
-  - Volume Breakout: Found 7 stocks
-  - 52-Week High: Found 15 stocks
-
-Top picks by category:
-  RSI Oversold: DCMSRIND (RSI 15), ATMASTCO (RSI 17)
-  MACD Crossover: YUKENIND, IREDA
-  Golden Cross: KESORAMIND, BSOFT
+analyze my portfolio from input/zerodha.csv
 ```
 
-### Verify Before Adding
+**What happens:**
+1. Parse CSV → extract holdings
+2. Fetch 1 year of price data (Yahoo Finance)
+3. Run 4 parallel analyses per stock:
+   - Technical indicators
+   - Fundamental research (web search)
+   - News sentiment (web search)
+   - Legal/corporate signals (web search)
+4. Score each stock (1-10) with safety gates
+5. Generate `output/analysis_YYYYMMDD_HHMMSS.csv`
 
-Run full technical analysis on promising stocks:
+### B) Scan → Verify → Track
+
+Best for: discovering new opportunities, building a watchlist.
+
+**Step 1: Scan** — Find candidates via web search of screener sites
+
+```
+run stock scanner
+```
+
+Searches Chartink, Trendlyne, Groww, etc. for:
+- RSI Oversold (< 30)
+- MACD Crossover
+- Golden Cross (SMA50 > SMA200)
+- Volume Breakout
+- 52-Week High
+
+**Step 2: Verify** — Run full technical analysis on picks
 
 ```bash
-uv run python scripts/verify_scan.py VPRPL IREDA RVNL COALINDIA
+uv run python scripts/verify_scan.py SYMBOL1 SYMBOL2 SYMBOL3
 ```
 
 Output:
 ```
-================================================================================
 Symbol       Score   Rec          RSI      MACD     Trend        52W
-================================================================================
 RVNL         8.0     STRONG BUY   38.0     Bullish  STRONG UP    5.2% off
 IREDA        7.0     BUY          45.0     Bullish  STRONG UP    8.1% off
-VPRPL        6.5     BUY          21.0     Bullish  UP           15.3% off
-COALINDIA    5.5     HOLD         52.0     Bearish  UP           12.0% off
-================================================================================
 ```
 
-### Manage Watchlist
+**Step 3: Watchlist** — Track your picks
 
 ```bash
-# Add stocks
+# Add to watchlist
 uv run python scripts/watchlist.py add RVNL rsi_oversold 245.50
 
-# View watchlist with prices
+# View watchlist
 uv run python scripts/watchlist.py list -p
 
 # Track performance
 uv run python scripts/track_performance.py
 ```
 
-Performance output:
-```
-Symbol       Return     Days     Signal             Entry      Current
-----------------------------------------------------------------------
-DCMSRIND     +18.1%     14       rsi_oversold       Rs 245     Rs 290
-YUKENIND     +5.3%      7        macd_crossover     Rs 1030    Rs 1085
-```
+---
+
+## Output
+
+### CSV Location
+
+Reports are saved to `output/analysis_YYYYMMDD_HHMMSS.csv`.
+
+### Key Columns
+
+| Column | Description |
+|--------|-------------|
+| `symbol` | Stock symbol |
+| `overall_score` | Weighted final score (1-10) |
+| `recommendation` | STRONG BUY / BUY / HOLD / SELL / STRONG SELL |
+| `confidence` | HIGH / MEDIUM / LOW |
+| `rsi`, `rsi_score` | RSI value and score |
+| `macd_score`, `trend_score` | Individual indicator scores |
+| `technical_score` | Technical composite |
+| `fundamental_score` | Financials (1-10) |
+| `news_sentiment_score` | News/analyst sentiment |
+| `coverage` | Data sources present (T=technical, F=fundamental, N=news, L=legal) |
+
+> **Note:** The CSV includes a portfolio summary footer after data rows. When using pandas: `pd.read_csv(..., skipfooter=N)` or filter rows where `symbol` is not empty.
+
+### Dashboard
+
+Open `dashboard/index.html` in any browser. Click "Select CSV File" to load your analysis. Features:
+- Sort by score, recommendation, or any column
+- Click a row for detailed breakdown
+- Visual charts for score distribution
 
 ---
 
-## Scoring System
-
-### Weights
+## Scoring Overview
 
 | Component | Weight |
 |-----------|--------|
-| Technical Analysis | 35% |
-| Fundamentals | 30% |
+| Technical | 35% |
+| Fundamental | 30% |
 | News Sentiment | 20% |
 | Legal/Corporate | 15% |
-
-### Recommendations
 
 | Score | Recommendation |
 |-------|----------------|
@@ -219,163 +196,146 @@ YUKENIND     +5.3%      7        macd_crossover     Rs 1030    Rs 1085
 | 3.0 - 4.4 | SELL |
 | < 3.0 | STRONG SELL |
 
-## Technical Indicators
+**Safety gates** prevent bad recommendations:
+- Trend < 5 → caps at HOLD (no buying into downtrends)
+- High news + low technicals → downgrades BUY to HOLD (no hype-only buys)
+- STRONG BUY requires aligned trend, MACD, and ADX
 
-| Indicator | Period | What it measures |
-|-----------|--------|------------------|
-| RSI | 14 days | Overbought/oversold momentum |
-| MACD | 12/26/9 | Trend momentum and crossovers |
-| SMA | 50 & 200 | Short and long-term trend |
-| Bollinger | 20, 2σ | Volatility and price position |
-| ADX | 14 days | Trend strength |
-| Volume | 20-day avg | Buying/selling pressure |
+See [docs/scoring.md](docs/scoring.md) for complete methodology.
 
-### How Technical Scores Work
+---
 
-Each indicator is scored 1-10 (higher = more bullish). **Tuned for trend-following, NOT mean-reversion.**
+## Configuration
 
-**RSI (Relative Strength Index)** - *Entry Timing*
-| RSI Value | Score | Interpretation |
-|-----------|-------|----------------|
-| < 25 | 4 | Extreme oversold - potential falling knife |
-| 25-35 | 7 | Pullback zone - ideal entry in uptrend |
-| 35-55 | 6 | Healthy momentum |
-| 55-70 | 5 | Neutral-to-strong |
-| 70-80 | 4 | Overbought - not ideal entry |
-| > 80 | 3 | Extreme overbought |
+All thresholds are in `utils/config.py`:
 
-**MACD (Moving Average Convergence Divergence)** - *Momentum Confirmation*
-| Condition | Score | Interpretation |
-|-----------|-------|----------------|
-| Above signal + rising + above zero | 9 | Full bullish |
-| Above signal + rising | 7 | Recovering |
-| Above signal (not rising) | 5 | Momentum fading |
-| Below signal but above zero | 4 | Pullback in uptrend |
-| Below signal + below zero | 2 | Full bearish |
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `CACHE_FRESHNESS_HOURS` | 18 | How long to cache OHLCV data |
+| `COMPONENT_WEIGHTS` | See file | Technical/fundamental/news/legal weights |
+| `THRESHOLDS` | See file | Score cutoffs for recommendations |
+| `GATES` | See file | Safety gate thresholds |
 
-**Trend (SMA 50/200)** - *PRIMARY GATE*
-| Condition | Score | Interpretation |
-|-----------|-------|----------------|
-| Price > SMA50 > SMA200 | 9 | Strong uptrend - green light |
-| Price > SMA200 > SMA50 | 7 | Golden cross forming |
-| Price > SMA50, SMA50 < SMA200 | 5 | Bear market rally - caution |
-| SMA50 > SMA200, Price < SMA50 | 5 | Pullback in uptrend - watch |
-| Price < SMA50 < SMA200 | 2 | Strong downtrend - avoid |
+### Planned Configuration
 
-**Bollinger Bands (%B)** - *Pullback Context (Not Mean-Reversion)*
-| %B Value | Score | Interpretation |
-|----------|-------|----------------|
-| < 0 | 3 | Breaking down below bands |
-| 0 - 0.2 | 5 | Near lower band (neutral) |
-| 0.2 - 0.8 | 6 | Healthy range |
-| 0.8 - 1.0 | 5 | Approaching upper band |
-| > 1.0 | 4 | Extended breakout |
+These should be configurable but currently require code changes:
 
-**ADX (Average Directional Index)** - *Trend Strength Qualifier*
-| ADX + Direction | Score | Interpretation |
-|-----------------|-------|----------------|
-| > 30 + uptrend | 9 | Strong uptrend - high confidence |
-| 25-30 + uptrend | 7 | Moderate uptrend |
-| 20-25 | 5 | Developing trend |
-| < 20 | 4 | Weak/no trend - dampen signals |
-| > 25 + downtrend | 2 | Strong downtrend - avoid |
+| Setting | Current | Location |
+|---------|---------|----------|
+| Fetch delay between stocks | 2s | `scripts/fetch_all.py` |
+| Batch size for agents | 3-5 | `CLAUDE.md` orchestration |
+| Technical indicator weights | Equal (1/6) | `utils/config.py` |
 
-**Volume Ratio** - *Breakout Confirmation*
-| Condition | Score | Interpretation |
-|-----------|-------|----------------|
-| > 2.0x avg + up day | 9 | Breakout volume |
-| 1.5-2.0x avg + up day | 7 | Accumulation |
-| 1.0-1.5x avg | 5 | Normal volume |
-| 1.5-2.0x avg + down day | 4 | Distribution |
-| > 2.0x avg + down day | 2 | Panic selling |
+---
 
-The **technical_score** is the weighted average of all 6 indicator scores.
+## Limitations & Data Accuracy
 
-## Output Columns
+**Yahoo Finance caveats:**
+- Data may be 15-20 minutes delayed
+- Some thinly traded stocks have gaps or stale quotes
+- Corporate actions (splits, bonuses) may cause temporary anomalies
 
-| Column | Description |
-|--------|-------------|
-| symbol | Stock symbol |
-| broker | Source broker (zerodha/groww) |
-| name | Company name |
-| quantity | Shares held |
-| avg_price | Average purchase price |
-| current_price | Latest price |
-| pnl_pct | Profit/Loss % |
-| rsi | RSI value (14-day) |
-| rsi_score | RSI score (1-10) |
-| macd_score | MACD score (1-10) |
-| trend_score | Trend score (1-10) |
-| bollinger_score | Bollinger score (1-10) |
-| adx_score | ADX score (1-10) |
-| volume_score | Volume score (1-10) |
-| technical_score | Technical composite (1-10) |
-| fundamental_score | Financials (1-10) |
-| news_sentiment_score | News/analyst sentiment (1-10) |
-| legal_corporate_score | Legal signals (1-10) |
-| overall_score | Weighted final score |
-| recommendation | STRONG BUY / BUY / HOLD / SELL / STRONG SELL |
-| confidence | HIGH / MEDIUM / LOW - signal alignment |
-| coverage | Data sources present (e.g., TFNL) |
-| coverage_pct | % of analysis complete |
-| gate_flags | Safety gates triggered |
-| summary | Brief analysis summary |
-| red_flags | Any severe concerns |
+**Throttling:**
+- Fetches are sequential with delays to avoid rate limits
+- Large portfolios (20+ stocks) take several minutes
+- Web search agents run in batches of 3-5
 
-**Note:** The CSV includes a portfolio summary footer after the data rows. Use `pandas.read_csv(..., skipfooter=N)` or filter rows where `symbol` is empty to get clean tabular data.
+**Coverage:**
+- Small-cap stocks may have limited fundamental/news coverage
+- Some analysis components may return empty (reflected in `coverage` column)
 
-## Sample Output
+See [docs/data-sources.md](docs/data-sources.md) for complete data flow.
 
-```
-> analyze my portfolio from input/sample_zerodha.csv
-
-● csv-parser - Done (5 stocks found)
-● Running 5 data-fetcher agents in parallel...
-● Batch 1: Analyzing RELIANCE, TCS, TATAPOWER (12 agents)
-● Batch 2: Analyzing IRCTC, HAPPSTMNDS (8 agents)
-● Running 5 scorer agents...
-● Analysis complete!
-
-| Symbol     | Score | Recommendation | Confidence |
-|------------|-------|----------------|------------|
-| RELIANCE   | 7.2   | BUY            | ●●● HIGH   |
-| TCS        | 6.8   | BUY            | ●●○ MEDIUM |
-| TATAPOWER  | 5.5   | HOLD           | ●●○ MEDIUM |
-| IRCTC      | 6.1   | HOLD           | ●○○ LOW    | (gated: weak_trend)
-| HAPPSTMNDS | 4.8   | HOLD           | ●○○ LOW    |
-
-Report saved to: output/analysis_20260101_120000.csv
-```
+---
 
 ## Project Structure
 
 ```
 portfolio-analyzer/
 ├── input/              # Put your CSV files here
-├── output/             # Analysis reports generated here
-├── .claude/agents/     # AI agent definitions
+├── output/             # Analysis reports
+├── dashboard/          # HTML dashboard (index.html)
 ├── scripts/            # Python analysis scripts
+├── utils/              # Shared config and helpers
 ├── data/
 │   ├── holdings.json   # Parsed portfolio
-│   ├── technical/      # Portfolio technical analysis
-│   ├── scan_technical/ # Scanner verification results
+│   ├── technical/      # Technical analysis (portfolio)
+│   ├── scan_technical/ # Technical analysis (scanner)
 │   ├── fundamentals/   # Fundamental research
 │   ├── news/           # News sentiment
-│   ├── legal/          # Legal/corporate signals
+│   ├── legal/          # Legal signals
 │   ├── scores/         # Final scores
-│   ├── scans/          # Scanner results (timestamped)
-│   ├── scan_history/   # Per-stock tracking history
-│   └── watchlist.json  # Your tracked stocks
-├── cache/ohlcv/        # Cached OHLCV data (18hr freshness)
-└── dashboard/          # Interactive HTML dashboard
+│   ├── scans/          # Scanner results
+│   └── watchlist.json  # Tracked stocks
+├── cache/ohlcv/        # Cached price data (parquet)
+├── .claude/agents/     # AI agent definitions
+└── docs/               # Detailed documentation
 ```
 
-## Requirements
+---
 
-- [Claude Code](https://claude.ai/code) CLI
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv) package manager
+## Roadmap
+
+- [ ] Support for BSE stocks (`.BO` suffix)
+- [ ] Email/Slack alerts for watchlist price targets
+- [ ] Historical score tracking (see how recommendations changed)
+- [ ] Export to Google Sheets
+- [ ] Custom screener queries
+- [ ] Options chain analysis
+- [ ] Mutual fund holdings overlap detection
+- [ ] Docker container for isolated execution
+- [ ] API mode (JSON output)
+- [ ] Backtest recommendations against historical returns
+
+---
+
+## Contributing
+
+### Dev Setup
+
+```bash
+git clone https://github.com/yourusername/portfolio-analyzer.git
+cd portfolio-analyzer
+uv sync
+```
+
+### Adding New Scanners
+
+1. Add search queries to `.claude/agents/scanner.md`
+2. Add scan type to `scripts/save_scan.py`
+
+### Adding New Indicators
+
+1. Add calculation to `scripts/technical_analysis.py`
+2. Add scoring logic to `scripts/score_stock.py`
+3. Update weights in `utils/config.py`
+
+### Agent Definitions
+
+Agent behavior is defined in `.claude/agents/*.md`. Each file specifies:
+- Input/output format
+- Data sources
+- Scoring logic
+
+---
+
+## Security
+
+If you discover a security vulnerability, please email the maintainer directly rather than opening a public issue.
+
+---
 
 ## Disclaimer
 
-This tool is for informational purposes only. It does not constitute financial advice. Always do your own research and consult a qualified financial advisor before making investment decisions.
+This tool is for **informational purposes only**. It does not constitute financial advice. The recommendations are based on technical and fundamental signals, not personalized investment advice.
+
+- Past performance does not guarantee future results
+- Always do your own research (DYOR)
+- Consult a qualified financial advisor before making investment decisions
+- The authors are not responsible for any financial losses
+
+---
+
+## License
+
+[MIT](LICENSE)
