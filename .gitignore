@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+.env
+
+# Cache - OHLCV data from Yahoo Finance
+cache/
+
+# Data - intermediate analysis files (regenerated each run)
+data/
+
+# Output - analysis reports (user-specific)
+output/
+
+# Input - user portfolio CSVs (keep sample only)
+input/*.csv
+!input/sample_zerodha.csv
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude plans (session-specific)
+.claude/plans/
+
+# Disabled agents
+.claude/agents/_*.disabled
