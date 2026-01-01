@@ -113,7 +113,10 @@ function parseAnalysisData(rows) {
             continue;
         }
         if (firstCol.includes('STRONG BUY:') || firstCol.includes('BUY:') ||
-            firstCol.includes('HOLD:') || firstCol.includes('SELL:')) {
+            firstCol.includes('HOLD:') || firstCol.includes('SELL:') ||
+            firstCol.includes('SIGNAL CONFIDENCE') || firstCol.includes('HIGH:') ||
+            firstCol.includes('MEDIUM:') || firstCol.includes('LOW:') ||
+            firstCol.includes('Gated')) {
             continue; // Skip distribution rows
         }
 
@@ -147,7 +150,9 @@ function parseStockRow(row) {
 
     const symbol = get('symbol', 'Symbol', 'SYMBOL', 'instrument', 'Instrument');
     if (!symbol || symbol.includes('===') || symbol.includes('Total') || symbol.includes('Portfolio') ||
-        symbol.includes('RECOMMENDATION') || symbol.includes('Report Generated') || symbol.includes('OVERALL')) return null;
+        symbol.includes('RECOMMENDATION') || symbol.includes('Report Generated') || symbol.includes('OVERALL') ||
+        symbol.includes('SIGNAL CONFIDENCE') || symbol.includes('HIGH:') || symbol.includes('MEDIUM:') ||
+        symbol.includes('LOW:') || symbol.includes('Gated')) return null;
 
     const parseNum = v => v ? parseFloat(String(v).replace(/[₹,%]/g, '')) : 0;
 
@@ -177,10 +182,18 @@ function parseStockRow(row) {
         // Final
         overall_score: parseNum(get('overall_score', 'score')),
         recommendation: get('recommendation', 'Recommendation') || 'HOLD',
+        confidence: get('confidence', 'Confidence') || 'MEDIUM',
+        gate_flags: get('gate_flags', 'Gate Flags') || '',
         red_flags: get('red_flags', 'Red Flags') || '',
         summary: get('summary', 'Summary') || ''
     };
 }
+
+const CONFIDENCE = {
+    'HIGH': { class: 'conf-high', icon: '●●●', color: '#059669' },
+    'MEDIUM': { class: 'conf-medium', icon: '●●○', color: '#f59e0b' },
+    'LOW': { class: 'conf-low', icon: '●○○', color: '#ef4444' }
+};
 
 function getHealthRating(score) {
     if (score >= 7.5) return 'Excellent';
@@ -347,7 +360,7 @@ function updateTable() {
     }
 
     tbody.innerHTML = stocks.map(s => `
-        <tr onclick="showStockDetails('${s.symbol}')" class="${s.red_flags ? 'has-red-flag' : ''}">
+        <tr onclick="showStockDetails('${s.symbol}')" class="${s.red_flags ? 'has-red-flag' : ''} ${s.gate_flags ? 'has-gate-flag' : ''}">
             <td><strong>${s.symbol}</strong></td>
             <td class="tech-preview">
                 <span class="mini-score" title="Technical Score (RSI: ${s.rsi?.toFixed(1) || 'N/A'})">T:${s.technical_score?.toFixed(1) || '-'}</span>
@@ -357,7 +370,10 @@ function updateTable() {
             </td>
             <td class="${s.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative'}">${s.pnl_pct >= 0 ? '+' : ''}${s.pnl_pct?.toFixed(1) || 0}%</td>
             <td><span class="score-badge score-${getScoreClass(s.overall_score)}">${s.overall_score?.toFixed(1) || '-'}</span></td>
-            <td><span class="recommendation-badge recommendation-${RECOMMENDATIONS[s.recommendation]?.class || 'hold'}">${s.recommendation}</span></td>
+            <td>
+                <span class="recommendation-badge recommendation-${RECOMMENDATIONS[s.recommendation]?.class || 'hold'}">${s.recommendation}</span>
+                <span class="confidence-indicator ${CONFIDENCE[s.confidence]?.class || 'conf-medium'}" title="Confidence: ${s.confidence}${s.gate_flags ? ' | Gated: ' + s.gate_flags : ''}">${CONFIDENCE[s.confidence]?.icon || '●●○'}</span>
+            </td>
             <td class="summary-cell" title="${s.summary}">${truncate(s.summary, 50)}</td>
             <td class="red-flag-cell">${s.red_flags ? '⚠️ ' + truncate(s.red_flags, 30) : '✓'}</td>
         </tr>
@@ -375,7 +391,15 @@ function showStockDetails(symbol) {
             <div class="detail-row">
                 <span class="score-badge score-${getScoreClass(s.overall_score)} large">${s.overall_score?.toFixed(1)}/10</span>
                 <span class="recommendation-badge recommendation-${RECOMMENDATIONS[s.recommendation]?.class || 'hold'} large">${s.recommendation}</span>
+                <span class="confidence-badge ${CONFIDENCE[s.confidence]?.class || 'conf-medium'}" title="Signal Confidence">
+                    ${CONFIDENCE[s.confidence]?.icon || '●●○'} ${s.confidence}
+                </span>
             </div>
+            ${s.gate_flags ? `
+            <div class="gate-flags-notice">
+                <span class="gate-icon">🚧</span>
+                <span class="gate-text">Gated: ${s.gate_flags}</span>
+            </div>` : ''}
         </div>
 
         <div class="detail-section">

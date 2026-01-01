@@ -132,6 +132,17 @@ uv run python scripts/compile_report.py
 
 ---
 
+## Scoring Philosophy
+
+**Strategy: Medium-Term Trend-Following with Pullback Entries (1-3 months)**
+
+- Bias toward trend-following, NOT mean-reversion
+- Entry style: Buy pullbacks within established uptrends
+- Risk stance: Avoid falling knives; prefer fewer high-confidence signals
+- Philosophy: Technicals must confirm before fundamentals/news can recommend action
+
+---
+
 ## Scoring Weights
 
 | Component | Weight |
@@ -143,25 +154,65 @@ uv run python scripts/compile_report.py
 
 ## Recommendations
 
-| Score | Recommendation |
-|-------|----------------|
-| >= 8.0 | STRONG BUY |
-| >= 6.5 | BUY |
-| >= 4.5 | HOLD |
-| >= 3.0 | SELL |
-| < 3.0 | STRONG SELL |
+| Score | Recommendation | Meaning |
+|-------|----------------|---------|
+| >= 8.0 | STRONG BUY | Trend-confirmed, high-confidence entry. All signals aligned. |
+| >= 6.5 | BUY | Trend-aligned, acceptable entry risk. Consider scaling in. |
+| >= 4.5 | HOLD | Mixed signals OR strong fundamentals without technical confirmation. |
+| >= 3.0 | SELL | Technical + fundamental deterioration. Reduce on rallies. |
+| < 3.0 | STRONG SELL | Multiple negative signals. Exit on any bounce. |
+
+## Hard Gating Rules (Safety Constraints)
+
+These gates prevent bad recommendations:
+
+| Gate | Rule | Effect |
+|------|------|--------|
+| Trend Gate | `trend_score < 5` | Caps recommendation at HOLD |
+| Weak Trend + Volume | `ADX <= 4 AND volume < 6` | Caps recommendation at HOLD |
+| News Override | `news >= 8 AND technical < 5` | Downgrades BUY to HOLD |
+| STRONG BUY Alignment | Missing trend/MACD/ADX alignment | Downgrades to BUY |
+| Red Flag | Severe legal/regulatory issue | Caps score at 5.0 |
+
+## Confidence Levels
+
+Each recommendation includes a confidence level:
+
+| Confidence | Meaning |
+|------------|---------|
+| HIGH | All key signals (trend, MACD, ADX) are aligned |
+| MEDIUM | Partial alignment, some mixed signals |
+| LOW | Conflicting signals, or momentum without trend confirmation |
+
+Confidence drops when:
+- MACD strong but trend weak (momentum without direction)
+- ADX < 20 (no clear trend to follow)
+- Signals conflict (some bullish, some bearish)
+
+## Technical Indicator Roles
+
+| Indicator | Role | Can Boost? | Can Veto BUY? |
+|-----------|------|------------|---------------|
+| Trend (SMA) | Primary direction gate | Yes | **Yes** |
+| ADX | Trend strength qualifier | Yes | Indirect |
+| MACD | Momentum confirmation | Yes | Yes |
+| RSI | Entry timing | Limited | No |
+| Bollinger %B | Pullback context | Limited | No |
+| Volume | Breakout confirmation | Yes | Indirect |
+
+**Key principle:** RSI and Bollinger should never independently cause a BUY. They are timing tools, not direction tools.
 
 ## Configurable Weights
 
 Technical indicator weights can be customized in `config/technical_weights.csv`:
 ```
 indicator,weight,description
-rsi,0.20,Relative Strength Index
-macd,0.20,Moving Average Convergence Divergence
-trend,0.25,Price trend based on SMA50/200
-bollinger,0.10,Bollinger Bands
-adx,0.15,Average Directional Index
-volume,0.10,Volume analysis
+rsi,0.20,Relative Strength Index - entry timing in confirmed trends
+macd,0.20,Moving Average Convergence Divergence - momentum confirmation
+trend,0.25,Price trend based on SMA50/200 - PRIMARY GATE
+bollinger,0.10,Bollinger Bands - pullback context (not mean-reversion)
+adx,0.15,Average Directional Index - trend strength qualifier
+volume,0.10,Volume analysis - breakout/distribution confirmation
 ```
 
 ## Directory Structure

@@ -38,6 +38,18 @@ THRESHOLDS = {
     "sell": 3.0,
 }
 
+# Gating thresholds for hardened recommendations
+GATES = {
+    "trend_min_for_buy": 5,        # Trend score must be >= 5 for BUY
+    "adx_weak_threshold": 4,       # ADX <= 4 is weak trend
+    "volume_min_for_weak_trend": 6,  # Volume must be >= 6 if ADX is weak
+    "news_hype_threshold": 8,      # News >= 8 is potential hype
+    "tech_min_for_news_buy": 5,    # Tech must be >= 5 to trust high news
+    "strong_buy_trend_min": 7,     # STRONG BUY requires trend >= 7
+    "strong_buy_macd_min": 6,      # STRONG BUY requires MACD >= 6
+    "strong_buy_adx_min": 6,       # STRONG BUY requires ADX >= 6
+}
+
 
 def get_recommendation(score: float) -> str:
     """Map score to recommendation."""
@@ -51,6 +63,113 @@ def get_recommendation(score: float) -> str:
         return "SELL"
     else:
         return "STRONG SELL"
+
+
+def compute_confidence(scores: dict) -> str:
+    """
+    Compute confidence level based on signal agreement.
+
+    Returns: "HIGH", "MEDIUM", or "LOW"
+
+    Confidence drops when:
+    - Key signals conflict (some bullish, some bearish)
+    - MACD is strong but trend is weak (momentum without direction)
+    - ADX shows no trend (< threshold)
+    """
+    trend = scores.get("trend", 5)
+    macd = scores.get("macd", 5)
+    adx = scores.get("adx", 5)
+
+    # Count aligned signals (all bullish or all bearish)
+    bullish = sum(1 for s in [trend, macd, adx] if s >= 6)
+    bearish = sum(1 for s in [trend, macd, adx] if s <= 4)
+
+    # Conflict detection: both bullish and bearish signals present
+    has_conflict = (bullish > 0 and bearish > 0)
+
+    if has_conflict:
+        return "LOW"
+
+    # MACD strong but trend weak = momentum without direction
+    if macd >= 7 and trend < 5:
+        return "LOW"
+
+    # ADX shows no trend
+    if adx < GATES["adx_weak_threshold"]:
+        return "LOW"
+
+    # High alignment: all three agree
+    if bullish >= 3 or bearish >= 3:
+        return "HIGH"
+
+    return "MEDIUM"
+
+
+def apply_influence_caps(
+    technical_score: float,
+    fundamental_score: float,
+    news_score: float,
+    legal_score: float,
+) -> tuple[float, float, float]:
+    """
+    Cap non-technical influence when technicals are weak.
+
+    Prevents fundamentals/news from pushing weak-technical stocks to BUY.
+    Returns: (capped_fundamental, capped_news, capped_legal)
+    """
+    if technical_score < GATES["tech_min_for_news_buy"]:
+        # Cap news at 6.0 to prevent hype-driven BUY
+        news_score = min(news_score, 6.0)
+        # Cap fundamentals at 7.0 to prevent value-trap BUY
+        fundamental_score = min(fundamental_score, 7.0)
+
+    return fundamental_score, news_score, legal_score
+
+
+def apply_gates(
+    recommendation: str,
+    trend_score: float,
+    macd_score: float,
+    adx_score: float,
+    volume_score: float,
+    technical_score: float,
+    news_score: float,
+) -> tuple[str, list[str]]:
+    """
+    Apply hard gating rules to recommendation.
+
+    Returns: (adjusted_recommendation, list_of_gate_flags)
+    """
+    flags = []
+
+    # Gate 1: Trend gate - no BUY without trend confirmation
+    if trend_score < GATES["trend_min_for_buy"] and recommendation in ["BUY", "STRONG BUY"]:
+        recommendation = "HOLD"
+        flags.append("weak_trend_gate")
+
+    # Gate 2: Weak trend + volume gate
+    if (adx_score <= GATES["adx_weak_threshold"] and
+        volume_score < GATES["volume_min_for_weak_trend"] and
+        recommendation in ["BUY", "STRONG BUY"]):
+        recommendation = "HOLD"
+        flags.append("trendless_no_volume_gate")
+
+    # Gate 3: News override prevention
+    if (news_score >= GATES["news_hype_threshold"] and
+        technical_score < GATES["tech_min_for_news_buy"] and
+        recommendation == "BUY"):
+        recommendation = "HOLD"
+        flags.append("sentiment_without_confirmation")
+
+    # Gate 4: STRONG BUY alignment - requires trend + momentum + strength
+    if recommendation == "STRONG BUY":
+        if not (trend_score >= GATES["strong_buy_trend_min"] and
+                macd_score >= GATES["strong_buy_macd_min"] and
+                adx_score >= GATES["strong_buy_adx_min"]):
+            recommendation = "BUY"
+            flags.append("strong_buy_alignment_failed")
+
+    return recommendation, flags
 
 
 def get_rsi_description(rsi: float | None) -> str:
@@ -278,12 +397,24 @@ def score_stock(symbol: str, broker: str | None = None) -> dict:
     news_score = news.get("news_sentiment_score", 5)
     legal_score = legal.get("legal_corporate_score", 5)
 
-    # Calculate weighted score
+    # Extract individual technical indicator scores
+    tech_scores = technical.get("scores", {})
+    trend_score = tech_scores.get("trend", 5)
+    macd_score = tech_scores.get("macd", 5)
+    adx_score = tech_scores.get("adx", 5)
+    volume_score = tech_scores.get("volume", 5)
+
+    # Apply influence caps when technicals are weak
+    capped_fundamental, capped_news, capped_legal = apply_influence_caps(
+        technical_score, fundamental_score, news_score, legal_score
+    )
+
+    # Calculate weighted score with capped values
     overall_score = (
         technical_score * WEIGHTS["technical"] +
-        fundamental_score * WEIGHTS["fundamental"] +
-        news_score * WEIGHTS["news_sentiment"] +
-        legal_score * WEIGHTS["legal_corporate"]
+        capped_fundamental * WEIGHTS["fundamental"] +
+        capped_news * WEIGHTS["news_sentiment"] +
+        capped_legal * WEIGHTS["legal_corporate"]
     )
 
     # Check for severe red flags
@@ -295,6 +426,20 @@ def score_stock(symbol: str, broker: str | None = None) -> dict:
 
     overall_score = round(overall_score, 1)
     recommendation = get_recommendation(overall_score)
+
+    # Apply hard gating rules
+    recommendation, gate_flags = apply_gates(
+        recommendation,
+        trend_score,
+        macd_score,
+        adx_score,
+        volume_score,
+        technical_score,
+        news_score,
+    )
+
+    # Compute confidence level
+    confidence = compute_confidence(tech_scores)
 
     # Build comprehensive summary using new format
     summary = build_comprehensive_summary(technical, fundamentals, news, legal)
@@ -310,9 +455,6 @@ def score_stock(symbol: str, broker: str | None = None) -> dict:
     if avg_price and current_price:
         pnl_pct = round((current_price - avg_price) / avg_price * 100, 1)
 
-    # Extract individual scores from technical data
-    scores = technical.get("scores", {})
-
     # Get broker from holding or parameter
     holding_broker = holding.get("broker") if holding else broker
 
@@ -326,18 +468,20 @@ def score_stock(symbol: str, broker: str | None = None) -> dict:
         "current_price": current_price,
         "pnl_pct": pnl_pct,
         "rsi": indicators.get("rsi"),
-        "rsi_score": scores.get("rsi"),
-        "macd_score": scores.get("macd"),
-        "trend_score": scores.get("trend"),
-        "bollinger_score": scores.get("bollinger"),
-        "adx_score": scores.get("adx"),
-        "volume_score": scores.get("volume"),
+        "rsi_score": tech_scores.get("rsi"),
+        "macd_score": tech_scores.get("macd"),
+        "trend_score": tech_scores.get("trend"),
+        "bollinger_score": tech_scores.get("bollinger"),
+        "adx_score": tech_scores.get("adx"),
+        "volume_score": tech_scores.get("volume"),
         "technical_score": technical_score,
         "fundamental_score": fundamental_score,
         "news_sentiment_score": news_score,
         "legal_corporate_score": legal_score,
         "overall_score": overall_score,
         "recommendation": recommendation,
+        "confidence": confidence,
+        "gate_flags": ", ".join(gate_flags) if gate_flags else "",
         "red_flags": ", ".join(red_flags) if red_flags else "",
         "summary": summary,
     }

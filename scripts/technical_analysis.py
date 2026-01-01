@@ -82,42 +82,69 @@ def load_technical_weights(config_path: Path) -> dict:
 
 
 def score_rsi(rsi: float) -> int:
-    """Score RSI on 1-10 scale."""
+    """
+    Score RSI on 1-10 scale (trend-aligned, not mean-reversion).
+
+    Tuned for trend-following with pullback entries:
+    - Extreme oversold may be falling knife, not automatic buy
+    - Pullback zone (25-35) is ideal entry in confirmed uptrend
+    - Overbought is caution for new entries, not bearish
+    """
     if pd.isna(rsi):
         return 5
-    if rsi < 30:
-        return 9  # Oversold - bullish
-    elif rsi < 40:
-        return 7
-    elif rsi < 60:
-        return 5  # Neutral
+    if rsi < 25:
+        return 4   # Extreme oversold - potential falling knife
+    elif rsi < 35:
+        return 7   # Pullback zone - ideal entry in uptrend
+    elif rsi < 55:
+        return 6   # Healthy momentum
     elif rsi < 70:
-        return 4
+        return 5   # Neutral-to-strong
+    elif rsi < 80:
+        return 4   # Overbought - not ideal entry
     else:
-        return 2  # Overbought - bearish
+        return 3   # Extreme overbought
 
 
 def score_macd(macd: float, signal: float, prev_macd: float, prev_signal: float) -> int:
-    """Score MACD on 1-10 scale."""
+    """
+    Score MACD on 1-10 scale (zero-line aware).
+
+    Considers:
+    - MACD vs Signal line (momentum direction)
+    - Rising vs falling (momentum strength)
+    - Above vs below zero (trend context)
+    """
     if pd.isna(macd) or pd.isna(signal):
         return 5
 
-    macd_above = macd > signal
-    prev_macd_above = prev_macd > prev_signal if not (pd.isna(prev_macd) or pd.isna(prev_signal)) else macd_above
+    macd_above_signal = macd > signal
     rising = macd > prev_macd if not pd.isna(prev_macd) else True
+    above_zero = macd > 0
 
-    if macd_above and rising:
-        return 8  # Bullish and strengthening
-    elif macd_above:
-        return 6  # Bullish
-    elif not macd_above and not rising:
-        return 2  # Bearish and weakening
+    if macd_above_signal and rising and above_zero:
+        return 9   # Full bullish - above zero, rising, above signal
+    elif macd_above_signal and rising:
+        return 7   # Recovering - rising but below zero
+    elif macd_above_signal:
+        return 5   # Momentum fading - above signal but not rising
+    elif above_zero:
+        return 4   # Pullback in uptrend - below signal but above zero
     else:
-        return 4  # Bearish
+        return 2   # Full bearish - below zero and below signal
 
 
 def score_trend(close: float, sma50: float, sma200: float) -> int:
-    """Score trend based on price vs SMAs on 1-10 scale."""
+    """
+    Score trend based on price vs SMAs on 1-10 scale.
+
+    This is the PRIMARY TREND GATE - most important indicator.
+    Distinguishes between:
+    - Strong uptrend (price > SMA50 > SMA200)
+    - Pullback in uptrend (SMA50 > SMA200, price < SMA50)
+    - Bear market rally (price > SMA50, SMA50 < SMA200)
+    - Strong downtrend (price < SMA50 < SMA200)
+    """
     if pd.isna(sma50):
         return 5  # Not enough data
 
@@ -129,56 +156,97 @@ def score_trend(close: float, sma50: float, sma200: float) -> int:
             return 3
 
     if close > sma50 > sma200:
-        return 9  # Strong uptrend
-    elif close > sma50:
-        return 6  # Above short-term
+        return 9   # Strong uptrend - green light
+    elif close > sma200 > sma50:
+        return 7   # Golden cross forming / recovery
+    elif close > sma50 and sma50 < sma200:
+        return 5   # Bear market rally - caution
+    elif sma50 > sma200 and close < sma50:
+        return 5   # Pullback in uptrend - watch
     elif close < sma50 < sma200:
-        return 2  # Strong downtrend
+        return 2   # Strong downtrend - avoid
     else:
-        return 4  # Mixed
+        return 4   # Sideways / no clear trend
 
 
 def score_bollinger(pctb: float) -> int:
-    """Score Bollinger %B on 1-10 scale."""
+    """
+    Score Bollinger %B on 1-10 scale (trend-neutral, not mean-reversion).
+
+    For trend-following:
+    - Near lower band is NOT automatically bullish (may be breakdown)
+    - Near upper band is NOT automatically bearish (may be breakout)
+    - Scores are neutral; requires trend confirmation for interpretation
+    """
     if pd.isna(pctb):
         return 5
-    if pctb < 0.2:
-        return 8  # Near lower band - potential bounce
+    if pctb < 0:
+        return 3   # Breaking down below bands
+    elif pctb < 0.2:
+        return 5   # Near lower band (neutral until trend confirms)
+    elif pctb < 0.5:
+        return 6   # Pullback zone - healthy in uptrend
     elif pctb < 0.8:
-        return 5  # Middle range
+        return 6   # Middle-upper range
+    elif pctb <= 1.0:
+        return 5   # Approaching upper band
     else:
-        return 3  # Near upper band - potential resistance
+        return 4   # Extended breakout - may be stretched
 
 
 def score_adx(adx: float, plus_di: float, minus_di: float) -> int:
-    """Score ADX on 1-10 scale."""
+    """
+    Score ADX on 1-10 scale (trend strength qualifier).
+
+    ADX measures trend STRENGTH, not direction.
+    Direction comes from +DI vs -DI.
+
+    Key insight: Low ADX (< 20) means NO TREND - dampens all signals.
+    Used as a qualifier for other indicators.
+    """
     if pd.isna(adx):
         return 5
 
     uptrend = plus_di > minus_di if not (pd.isna(plus_di) or pd.isna(minus_di)) else True
 
-    if adx > 25 and uptrend:
-        return 8  # Strong uptrend
+    if adx > 30 and uptrend:
+        return 9   # Strong uptrend - high confidence
+    elif adx > 25 and uptrend:
+        return 7   # Moderate uptrend
     elif adx > 25 and not uptrend:
-        return 3  # Strong downtrend
-    elif adx < 20:
-        return 5  # Weak trend
+        return 2   # Strong downtrend - avoid
+    elif adx >= 20:
+        return 5   # Developing trend
     else:
-        return 5  # Moderate trend
+        return 4   # Weak/no trend - dampen all signals
 
 
 def score_volume(volume_ratio: float, is_up_day: bool) -> int:
-    """Score volume on 1-10 scale."""
+    """
+    Score volume on 1-10 scale.
+
+    Volume confirms price moves:
+    - High volume on up day = accumulation (bullish)
+    - High volume on down day = distribution (bearish)
+    - Normal volume = neutral (no confirmation)
+    """
     if pd.isna(volume_ratio):
         return 5
 
-    if volume_ratio > 1.5:
+    if volume_ratio > 2.0:
         if is_up_day:
-            return 8  # High volume on up day - bullish
+            return 9   # Breakout volume - strong accumulation
         else:
-            return 3  # High volume on down day - bearish
+            return 2   # Panic selling - distribution
+    elif volume_ratio > 1.5:
+        if is_up_day:
+            return 7   # Accumulation
+        else:
+            return 4   # Distribution
+    elif volume_ratio > 1.0:
+        return 5   # Normal volume
     else:
-        return 5  # Normal volume
+        return 5   # Below average - no signal
 
 
 def compute_technical_indicators(df: pd.DataFrame, weights: dict = None) -> dict:

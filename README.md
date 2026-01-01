@@ -9,7 +9,62 @@ AI-powered stock portfolio analyzer for Indian brokers (Zerodha/Groww). Uses Cla
 - **Fundamental Research** - Quarterly results, P/E ratios, growth metrics
 - **News Sentiment** - Recent news, analyst ratings, target prices
 - **Legal Signals** - SEBI issues, lawsuits, major contracts
-- **Scoring System** - Weighted scores with BUY/HOLD/SELL recommendations
+- **Hardened Scoring** - Conservative recommendations with safety gates
+
+---
+
+## Scoring Philosophy at a Glance
+
+```
+                    PORTFOLIO ANALYZER SCORING SYSTEM
+    ================================================================
+
+    STRATEGY: Medium-Term Trend-Following (1-3 months)
+    INTENT:   Conservative BUY signals, avoid falling knives
+
+    ┌─────────────────────────────────────────────────────────────┐
+    │                    SIGNAL FLOW                              │
+    │                                                             │
+    │   RAW SCORES          GATES              FINAL OUTPUT       │
+    │   ──────────         ──────              ────────────       │
+    │                                                             │
+    │   Technical ─35%─┐                                          │
+    │                  │    ┌──────────────┐                      │
+    │   Fundamental 30%├───>│ SAFETY GATES │───> Recommendation   │
+    │                  │    │              │     + Confidence     │
+    │   News ─────20%──┤    │ - Trend < 5? │                      │
+    │                  │    │ - ADX weak?  │                      │
+    │   Legal ────15%──┘    │ - Hype only? │                      │
+    │                       └──────────────┘                      │
+    └─────────────────────────────────────────────────────────────┘
+
+    INDICATOR ROLES:
+    ┌────────────────────────────────────────────────────────────┐
+    │  Trend (SMA)  ████████████  PRIMARY GATE - Must confirm    │
+    │  ADX          ████████░░░░  Strength qualifier             │
+    │  MACD         ████████░░░░  Momentum confirmation          │
+    │  RSI          ████░░░░░░░░  Entry timing only              │
+    │  Bollinger    ████░░░░░░░░  Pullback context only          │
+    │  Volume       ████░░░░░░░░  Breakout confirmation          │
+    └────────────────────────────────────────────────────────────┘
+
+    HARD GATES (Non-Negotiable):
+    ┌────────────────────────────────────────────────────────────┐
+    │  Trend < 5         →  Max recommendation: HOLD             │
+    │  ADX weak + low vol →  Max recommendation: HOLD            │
+    │  High news, low tech → Downgrade BUY to HOLD               │
+    │  STRONG BUY needs   →  Trend >= 7, MACD >= 6, ADX >= 6     │
+    └────────────────────────────────────────────────────────────┘
+
+    CONFIDENCE LEVELS:
+    ┌────────────────────────────────────────────────────────────┐
+    │  ●●● HIGH    All signals aligned                           │
+    │  ●●○ MEDIUM  Partial alignment                             │
+    │  ●○○ LOW     Conflicting signals or weak trend             │
+    └────────────────────────────────────────────────────────────┘
+```
+
+---
 
 ## Quick Start
 
@@ -93,54 +148,64 @@ Results are saved to `output/analysis_YYYYMMDD_HHMMSS.csv`
 
 ### How Technical Scores Work
 
-Each indicator is scored 1-10 (higher = more bullish):
+Each indicator is scored 1-10 (higher = more bullish). **Tuned for trend-following, NOT mean-reversion.**
 
-**RSI (Relative Strength Index)**
+**RSI (Relative Strength Index)** - *Entry Timing*
 | RSI Value | Score | Interpretation |
 |-----------|-------|----------------|
-| < 30 | 9 | Oversold - potential buying opportunity |
-| 30-40 | 7 | Approaching oversold |
-| 40-60 | 5 | Neutral |
-| 60-70 | 4 | Approaching overbought |
-| > 70 | 2 | Overbought - potential selling signal |
+| < 25 | 4 | Extreme oversold - potential falling knife |
+| 25-35 | 7 | Pullback zone - ideal entry in uptrend |
+| 35-55 | 6 | Healthy momentum |
+| 55-70 | 5 | Neutral-to-strong |
+| 70-80 | 4 | Overbought - not ideal entry |
+| > 80 | 3 | Extreme overbought |
 
-**MACD (Moving Average Convergence Divergence)**
+**MACD (Moving Average Convergence Divergence)** - *Momentum Confirmation*
 | Condition | Score | Interpretation |
 |-----------|-------|----------------|
-| MACD > Signal & rising | 8 | Strong bullish momentum |
-| MACD > Signal | 6 | Bullish |
-| MACD < Signal | 4 | Bearish |
-| MACD < Signal & falling | 2 | Strong bearish momentum |
+| Above signal + rising + above zero | 9 | Full bullish |
+| Above signal + rising | 7 | Recovering |
+| Above signal (not rising) | 5 | Momentum fading |
+| Below signal but above zero | 4 | Pullback in uptrend |
+| Below signal + below zero | 2 | Full bearish |
 
-**Trend (SMA 50/200)**
+**Trend (SMA 50/200)** - *PRIMARY GATE*
 | Condition | Score | Interpretation |
 |-----------|-------|----------------|
-| Price > SMA50 > SMA200 | 9 | Strong uptrend (Golden setup) |
-| Price > SMA50 | 6 | Short-term uptrend |
-| Price < SMA50 < SMA200 | 2 | Strong downtrend |
+| Price > SMA50 > SMA200 | 9 | Strong uptrend - green light |
+| Price > SMA200 > SMA50 | 7 | Golden cross forming |
+| Price > SMA50, SMA50 < SMA200 | 5 | Bear market rally - caution |
+| SMA50 > SMA200, Price < SMA50 | 5 | Pullback in uptrend - watch |
+| Price < SMA50 < SMA200 | 2 | Strong downtrend - avoid |
 
-**Bollinger Bands (%B)**
+**Bollinger Bands (%B)** - *Pullback Context (Not Mean-Reversion)*
 | %B Value | Score | Interpretation |
 |----------|-------|----------------|
-| < 0.2 | 8 | Near lower band - potential bounce |
-| 0.2 - 0.8 | 5 | Normal range |
-| > 0.8 | 3 | Near upper band - potential pullback |
+| < 0 | 3 | Breaking down below bands |
+| 0 - 0.2 | 5 | Near lower band (neutral) |
+| 0.2 - 0.8 | 6 | Healthy range |
+| 0.8 - 1.0 | 5 | Approaching upper band |
+| > 1.0 | 4 | Extended breakout |
 
-**ADX (Average Directional Index)**
+**ADX (Average Directional Index)** - *Trend Strength Qualifier*
 | ADX + Direction | Score | Interpretation |
 |-----------------|-------|----------------|
-| > 25 + uptrend | 8 | Strong bullish trend |
-| > 25 + downtrend | 3 | Strong bearish trend |
-| < 20 | 5 | Weak/no trend |
+| > 30 + uptrend | 9 | Strong uptrend - high confidence |
+| 25-30 + uptrend | 7 | Moderate uptrend |
+| 20-25 | 5 | Developing trend |
+| < 20 | 4 | Weak/no trend - dampen signals |
+| > 25 + downtrend | 2 | Strong downtrend - avoid |
 
-**Volume Ratio**
+**Volume Ratio** - *Breakout Confirmation*
 | Condition | Score | Interpretation |
 |-----------|-------|----------------|
-| > 1.5x avg + up day | 8 | High volume buying |
-| > 1.5x avg + down day | 3 | High volume selling |
-| Normal volume | 5 | No significant signal |
+| > 2.0x avg + up day | 9 | Breakout volume |
+| 1.5-2.0x avg + up day | 7 | Accumulation |
+| 1.0-1.5x avg | 5 | Normal volume |
+| 1.5-2.0x avg + down day | 4 | Distribution |
+| > 2.0x avg + down day | 2 | Panic selling |
 
-The **technical_score** is the average of all 6 indicator scores.
+The **technical_score** is the weighted average of all 6 indicator scores.
 
 ## Output Columns
 
@@ -157,6 +222,8 @@ The **technical_score** is the average of all 6 indicator scores.
 | legal_corporate_score | Legal signals (1-10) |
 | overall_score | Weighted final score |
 | recommendation | STRONG BUY / BUY / HOLD / SELL / STRONG SELL |
+| confidence | HIGH / MEDIUM / LOW - signal alignment quality |
+| gate_flags | Safety gates triggered (e.g., weak_trend_gate) |
 | red_flags | Any severe concerns |
 | summary | Brief analysis summary |
 
@@ -172,13 +239,13 @@ The **technical_score** is the average of all 6 indicator scores.
 ● Running 5 scorer agents...
 ● Analysis complete!
 
-| Symbol | Score | Recommendation |
-|--------|-------|----------------|
-| RELIANCE | 7.2 | BUY |
-| TCS | 6.8 | BUY |
-| TATAPOWER | 5.5 | HOLD |
-| IRCTC | 6.1 | HOLD |
-| HAPPSTMNDS | 4.8 | HOLD |
+| Symbol     | Score | Recommendation | Confidence |
+|------------|-------|----------------|------------|
+| RELIANCE   | 7.2   | BUY            | ●●● HIGH   |
+| TCS        | 6.8   | BUY            | ●●○ MEDIUM |
+| TATAPOWER  | 5.5   | HOLD           | ●●○ MEDIUM |
+| IRCTC      | 6.1   | HOLD           | ●○○ LOW    | (gated: weak_trend)
+| HAPPSTMNDS | 4.8   | HOLD           | ●○○ LOW    |
 
 Report saved to: output/analysis_20260101_120000.csv
 ```

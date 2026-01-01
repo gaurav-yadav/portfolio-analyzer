@@ -128,9 +128,17 @@ def compile_report() -> str:
 
     # Count recommendations distribution
     distribution = {}
+    confidence_dist = {}
+    gated_count = 0
     for s in all_scores:
         rec = s.get("recommendation", "UNKNOWN")
         distribution[rec] = distribution.get(rec, 0) + 1
+        # Count confidence levels
+        conf = s.get("confidence", "MEDIUM")
+        confidence_dist[conf] = confidence_dist.get(conf, 0) + 1
+        # Count gated recommendations
+        if s.get("gate_flags"):
+            gated_count += 1
 
     # Find top and worst performers
     top_performer = all_scores[0] if all_scores else None
@@ -162,6 +170,8 @@ def compile_report() -> str:
         "legal_corporate_score",
         "overall_score",
         "recommendation",
+        "confidence",
+        "gate_flags",
         "summary",
         "red_flags",
     ]
@@ -210,6 +220,16 @@ def compile_report() -> str:
             writer.writerow([f"  {rec}:", f"{count} ({pct}%)", bar])
         writer.writerow([])
 
+        # Confidence distribution
+        writer.writerow(["SIGNAL CONFIDENCE:"])
+        for conf in ["HIGH", "MEDIUM", "LOW"]:
+            count = confidence_dist.get(conf, 0)
+            pct = round(count / total_stocks * 100, 1) if total_stocks > 0 else 0
+            writer.writerow([f"  {conf}:", f"{count} ({pct}%)"])
+        if gated_count > 0:
+            writer.writerow([f"  Gated Recommendations:", f"{gated_count} (downgraded by safety rules)"])
+        writer.writerow([])
+
         # Top and worst performers
         if top_performer:
             writer.writerow([
@@ -249,9 +269,15 @@ def print_summary(output_file: str, all_scores: list):
     avg_score = round(sum(scores_list) / len(scores_list), 2)
 
     distribution = {}
+    confidence_dist = {}
+    gated_count = 0
     for s in all_scores:
         rec = s.get("recommendation", "UNKNOWN")
         distribution[rec] = distribution.get(rec, 0) + 1
+        conf = s.get("confidence", "MEDIUM")
+        confidence_dist[conf] = confidence_dist.get(conf, 0) + 1
+        if s.get("gate_flags"):
+            gated_count += 1
 
     print("\n" + "=" * 60)
     print("PORTFOLIO ANALYSIS REPORT")
@@ -264,6 +290,14 @@ def print_summary(output_file: str, all_scores: list):
         count = distribution.get(rec, 0)
         pct = round(count / total * 100, 1) if total > 0 else 0
         print(f"  {rec}: {count} ({pct}%)")
+
+    print("\nSignal Confidence:")
+    for conf in ["HIGH", "MEDIUM", "LOW"]:
+        count = confidence_dist.get(conf, 0)
+        pct = round(count / total * 100, 1) if total > 0 else 0
+        print(f"  {conf}: {count} ({pct}%)")
+    if gated_count > 0:
+        print(f"  Gated: {gated_count} (downgraded by safety rules)")
 
     print(f"\nOverall: {get_overall_recommendation(distribution, avg_score)}")
     print("=" * 60 + "\n")
