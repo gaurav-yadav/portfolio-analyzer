@@ -349,10 +349,10 @@ function updateTable() {
         <tr onclick="showStockDetails('${s.symbol}')" class="${s.red_flags ? 'has-red-flag' : ''}">
             <td><strong>${s.symbol}</strong></td>
             <td class="tech-preview">
-                <span class="mini-score" title="RSI: ${s.rsi?.toFixed(1) || 'N/A'}">T:${s.technical_score?.toFixed(1) || '-'}</span>
-                <span class="mini-score" title="Fundamental">F:${s.fundamental_score?.toFixed(1) || '-'}</span>
-                <span class="mini-score" title="News">N:${s.news_sentiment_score?.toFixed(1) || '-'}</span>
-                <span class="mini-score" title="Legal">L:${s.legal_corporate_score?.toFixed(1) || '-'}</span>
+                <span class="mini-score" title="Technical Score (RSI: ${s.rsi?.toFixed(1) || 'N/A'})">T:${s.technical_score?.toFixed(1) || '-'}</span>
+                <span class="mini-score" title="Fundamental Score (P/E, Revenue, Growth)">F:${s.fundamental_score?.toFixed(1) || '-'}</span>
+                <span class="mini-score" title="News Sentiment Score (Recent news & analyst ratings)">N:${s.news_sentiment_score?.toFixed(1) || '-'}</span>
+                <span class="mini-score" title="Legal/Corporate Score (Red flags, lawsuits, governance)">L:${s.legal_corporate_score?.toFixed(1) || '-'}</span>
             </td>
             <td class="${s.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative'}">${s.pnl_pct >= 0 ? '+' : ''}${s.pnl_pct?.toFixed(1) || 0}%</td>
             <td><span class="score-badge score-${getScoreClass(s.overall_score)}">${s.overall_score?.toFixed(1) || '-'}</span></td>
