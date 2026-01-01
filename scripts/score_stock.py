@@ -3,9 +3,14 @@
 Stock Scorer Script - Aggregates all analysis scores and generates recommendation.
 
 Usage:
-    uv run python scripts/score_stock.py <symbol>
+    uv run python scripts/score_stock.py <symbol> [--broker <broker>]
+
+Examples:
+    uv run python scripts/score_stock.py RELIANCE.NS
+    uv run python scripts/score_stock.py RELIANCE.NS --broker zerodha
 
 Output:
+    Saves score to data/scores/<symbol>@<broker>.json (or <symbol>.json if no broker specified)
     Prints final scored JSON to stdout
 """
 
@@ -235,12 +240,13 @@ def build_comprehensive_summary(technical: dict, fundamentals: dict, news: dict,
     return " ".join(parts)
 
 
-def score_stock(symbol: str) -> dict:
+def score_stock(symbol: str, broker: str | None = None) -> dict:
     """
     Aggregate all analysis data and compute final score.
 
     Args:
         symbol: Stock symbol (e.g., "RELIANCE.NS")
+        broker: Optional broker name to filter holdings (e.g., "zerodha", "groww")
 
     Returns:
         Dictionary with final scores and recommendation
@@ -253,7 +259,12 @@ def score_stock(symbol: str) -> dict:
 
     # Load holdings data
     holdings = load_json(base_path / "data" / "holdings.json") or []
-    holding = next((h for h in holdings if h["symbol"] == symbol_clean), None)
+
+    # Find matching holding (optionally filter by broker)
+    if broker:
+        holding = next((h for h in holdings if h["symbol"] == symbol_clean and h.get("broker") == broker), None)
+    else:
+        holding = next((h for h in holdings if h["symbol"] == symbol_clean), None)
 
     # Load analysis data
     technical = load_json(base_path / "data" / "technical" / f"{symbol_yf}.json") or {}
@@ -302,9 +313,13 @@ def score_stock(symbol: str) -> dict:
     # Extract individual scores from technical data
     scores = technical.get("scores", {})
 
+    # Get broker from holding or parameter
+    holding_broker = holding.get("broker") if holding else broker
+
     result = {
         "symbol": symbol_clean,
         "symbol_yf": symbol_yf,
+        "broker": holding_broker or "unknown",
         "name": name,
         "quantity": quantity,
         "avg_price": avg_price,
@@ -332,21 +347,32 @@ def score_stock(symbol: str) -> dict:
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: uv run python scripts/score_stock.py <symbol>", file=sys.stderr)
+        print("Usage: uv run python scripts/score_stock.py <symbol> [--broker <broker>]", file=sys.stderr)
         sys.exit(1)
 
     symbol = sys.argv[1]
+    broker = None
+
+    # Parse --broker argument
+    if "--broker" in sys.argv:
+        idx = sys.argv.index("--broker")
+        if idx + 1 < len(sys.argv):
+            broker = sys.argv[idx + 1]
 
     try:
-        result = score_stock(symbol)
+        result = score_stock(symbol, broker)
 
-        # Save to data/scores/<symbol>.json
+        # Save to data/scores/<symbol>@<broker>.json or <symbol>.json
         base_path = Path(__file__).parent.parent
         scores_dir = base_path / "data" / "scores"
         scores_dir.mkdir(parents=True, exist_ok=True)
 
-        symbol_yf = result["symbol_yf"]
-        output_file = scores_dir / f"{symbol_yf}.json"
+        # Use broker in filename if available
+        result_broker = result.get("broker", "unknown")
+        if result_broker and result_broker != "unknown":
+            output_file = scores_dir / f"{result['symbol']}@{result_broker}.json"
+        else:
+            output_file = scores_dir / f"{result['symbol_yf']}.json"
 
         with open(output_file, "w") as f:
             json.dump(result, f, indent=2)

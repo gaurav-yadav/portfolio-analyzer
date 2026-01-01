@@ -86,3 +86,12 @@ If you cannot find reliable data:
 - Use `null` for missing numeric fields
 - Set `fundamental_score` to 5 (neutral)
 - Note in summary: "Limited fundamental data available"
+
+## IMPORTANT: MINIMAL RESPONSE
+
+To conserve context, return ONLY a brief status message:
+```
+Done: Saved fundamentals for {symbol} to data/fundamentals/{symbol}.json (score: X/10)
+```
+
+DO NOT return the full JSON data in your response. The data is saved to the file.

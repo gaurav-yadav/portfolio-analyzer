@@ -2,48 +2,71 @@
 
 ## Quick Start
 
-When user says **"analyze my portfolio from `<csv_path>`"**, follow the orchestration steps below.
+When user says **"analyze my portfolio from `<csv_path>`"** (or multiple CSVs), follow the orchestration steps below.
 
-## Orchestration Steps
+## Orchestration Steps (Optimized for Large Portfolios)
 
-### Step 1: Parse CSV
-Launch the `csv-parser` agent with the CSV path.
+### Step 1: Parse CSV(s)
+```bash
+uv run python scripts/parse_csv.py input/kite.csv input/groww.csv
+```
 
-Wait for completion. Then read `data/holdings.json` to get the stock list.
+### Step 2: Fetch OHLCV (Batch Script)
+```bash
+uv run python scripts/fetch_all.py
+```
+Fetches Yahoo Finance data for all unique symbols. Cached for 18 hours.
 
-### Step 2: Fetch OHLCV Data
-Launch `data-fetcher` for ALL stocks IN PARALLEL.
+### Step 3: Technical Analysis (Batch Script)
+```bash
+uv run python scripts/technical_all.py
+```
+Computes RSI, MACD, SMA, Bollinger, ADX for all stocks. Deterministic, no agents needed.
 
-Wait for all to complete before Step 3.
+### Step 4: Web Research (Agents - Batched)
+For each unique symbol_yf, launch these **3 agents**:
+- **fundamentals-researcher** - P/E, revenue growth, quarterly results
+- **news-sentiment** - Recent news, analyst ratings
+- **legal-corporate** - Red flags, corporate actions
 
-### Step 3: Analyze (Parallel per Stock)
+**Batching:** Process 3-5 stocks at a time to conserve context:
+```
+Batch 1: RELIANCE, TCS, INFY → 9 agents
+Wait for completion
+Batch 2: HDFC, ICICI, SBIN → 9 agents
+Continue...
+```
 
-For EACH stock, launch these **4 agents IN PARALLEL**:
+**Important:** Agents return minimal status only (not full JSON).
 
-1. **technical-analyst** - Computes RSI, MACD, SMA, Bollinger, ADX from OHLCV
-2. **fundamentals-researcher** - WebSearch for quarterly results, P/E ratio, revenue growth
-3. **news-sentiment** - WebSearch for recent news, analyst ratings, target prices
-4. **legal-corporate** - WebSearch for SEBI issues, lawsuits, major contracts
+### Step 5: Score All Holdings (Batch Script)
+```bash
+uv run python scripts/score_all.py
+```
+Scores each holding (per broker) using the analysis data.
 
-**Batch stocks:** Process 2-3 stocks at a time to avoid overwhelming.
-
-### Step 4: Score (Parallel)
-After all Step 3 agents complete, launch the `scorer` agent for each stock IN PARALLEL.
-
-### Step 5: Compile Report
-Run the compile script to generate final report with portfolio health summary:
-
+### Step 6: Compile Report
 ```bash
 uv run python scripts/compile_report.py
 ```
+Creates `output/analysis_YYYYMMDD_HHMMSS.csv` with portfolio health summary.
 
-This creates:
-- `output/analysis_YYYYMMDD_HHMMSS.csv` - Full report with portfolio health footer
+### Step 7: View Dashboard (Optional)
+Open `dashboard/index.html` in browser and load the CSV.
 
-Report summary table with recommendations.
+---
 
-### Step 6: View Dashboard (Optional)
-Tell user they can open `dashboard/index.html` in browser and load the CSV for visual dashboard.
+## Quick Commands
+
+```bash
+# Full pipeline (after agents complete Step 4)
+uv run python scripts/parse_csv.py input/portfolio.csv
+uv run python scripts/fetch_all.py
+uv run python scripts/technical_all.py
+# ... run research agents for each stock ...
+uv run python scripts/score_all.py
+uv run python scripts/compile_report.py
+```
 
 ---
 

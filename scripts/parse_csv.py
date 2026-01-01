@@ -3,10 +3,15 @@
 CSV Parser Script - Parses Zerodha/Groww portfolio CSVs.
 
 Usage:
-    uv run python scripts/parse_csv.py <input_csv>
+    uv run python scripts/parse_csv.py <csv1> [csv2] [csv3] ...
+
+Examples:
+    uv run python scripts/parse_csv.py input/kite.csv
+    uv run python scripts/parse_csv.py input/kite.csv input/groww.csv
 
 Output:
     Writes parsed holdings to data/holdings.json
+    Holdings from different brokers are kept separate (not merged).
 """
 
 import csv
@@ -209,26 +214,48 @@ def parse_portfolio_csv(file_path: str) -> list[dict]:
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: uv run python scripts/parse_csv.py <input_csv>", file=sys.stderr)
+        print("Usage: uv run python scripts/parse_csv.py <csv1> [csv2] [csv3] ...", file=sys.stderr)
         sys.exit(1)
 
-    input_csv = sys.argv[1]
+    csv_files = sys.argv[1:]
+    all_holdings = []
 
-    try:
-        holdings = parse_portfolio_csv(input_csv)
+    for csv_file in csv_files:
+        try:
+            print(f"\nParsing: {csv_file}", file=sys.stderr)
+            holdings = parse_portfolio_csv(csv_file)
+            all_holdings.extend(holdings)
+        except Exception as e:
+            print(f"Error parsing {csv_file}: {e}", file=sys.stderr)
+            sys.exit(1)
 
-        # Save to data/holdings.json
-        output_path = Path(__file__).parent.parent / "data" / "holdings.json"
-        save_json(output_path, holdings)
+    # Deduplicate: same symbol + same broker = keep first occurrence
+    seen = set()
+    unique_holdings = []
+    for h in all_holdings:
+        key = (h["symbol"], h["broker"])
+        if key not in seen:
+            seen.add(key)
+            unique_holdings.append(h)
+        else:
+            print(f"Skipping duplicate: {h['symbol']} from {h['broker']}", file=sys.stderr)
 
-        print(f"Saved {len(holdings)} holdings to {output_path}", file=sys.stderr)
+    # Save to data/holdings.json
+    output_path = Path(__file__).parent.parent / "data" / "holdings.json"
+    save_json(output_path, unique_holdings)
 
-        # Also print to stdout for agent to capture
-        print(json.dumps(holdings, indent=2))
+    # Summary
+    broker_counts = {}
+    for h in unique_holdings:
+        broker_counts[h["broker"]] = broker_counts.get(h["broker"], 0) + 1
 
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+    print(f"\nTotal: {len(unique_holdings)} holdings from {len(csv_files)} file(s)", file=sys.stderr)
+    for broker, count in broker_counts.items():
+        print(f"  {broker}: {count} stocks", file=sys.stderr)
+    print(f"Saved to: {output_path}", file=sys.stderr)
+
+    # Also print to stdout for agent to capture
+    print(json.dumps(unique_holdings, indent=2))
 
 
 if __name__ == "__main__":

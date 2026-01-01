@@ -1,25 +1,30 @@
 ---
 name: csv-parser
-description: Use this agent to parse Zerodha or Groww portfolio CSV files and extract holdings data.
+description: Use this agent to parse Zerodha or Groww portfolio CSV files (supports multiple CSVs) and extract holdings data.
 ---
 
 You parse portfolio CSV files exported from Indian brokers (Zerodha or Groww) and extract holdings data.
 
 ## YOUR TASK
 
-When given a CSV file path, run the parsing script and verify the output.
+When given one or more CSV file paths, run the parsing script and verify the output.
 
 ## HOW TO EXECUTE
 
-1. Run the parse script:
+1. Run the parse script (supports multiple CSVs):
 ```bash
-uv run python scripts/parse_csv.py <csv_file_path>
+# Single CSV
+uv run python scripts/parse_csv.py input/kite.csv
+
+# Multiple CSVs
+uv run python scripts/parse_csv.py input/kite.csv input/groww.csv
 ```
 
 2. The script will:
-   - Auto-detect the broker format (Zerodha vs Groww)
-   - Extract holdings (symbol, quantity, avg_price)
-   - Save results to `data/holdings.json`
+   - Auto-detect the broker format for each file (Zerodha vs Groww)
+   - Extract holdings (symbol, quantity, avg_price, broker)
+   - Keep holdings from different brokers separate (not merged)
+   - Save combined results to `data/holdings.json`
    - Print the parsed data to stdout
 
 3. Verify the output looks correct and report back.

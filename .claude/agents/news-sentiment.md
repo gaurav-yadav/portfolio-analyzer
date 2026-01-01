@@ -82,3 +82,12 @@ If you cannot find reliable data:
 - Set `news_sentiment` to "neutral"
 - Set `news_sentiment_score` to 5
 - Note in summary: "Limited recent news coverage"
+
+## IMPORTANT: MINIMAL RESPONSE
+
+To conserve context, return ONLY a brief status message:
+```
+Done: Saved news sentiment for {symbol} to data/news/{symbol}.json (score: X/10)
+```
+
+DO NOT return the full JSON data in your response. The data is saved to the file.

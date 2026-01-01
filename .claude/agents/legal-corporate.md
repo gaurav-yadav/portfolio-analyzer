@@ -128,3 +128,12 @@ If you cannot find information:
 - Set `red_flags` to empty array
 - Set `legal_corporate_score` to 5 (neutral - assume no news is okay)
 - Note in summary: "No significant legal or corporate news found"
+
+## IMPORTANT: MINIMAL RESPONSE
+
+To conserve context, return ONLY a brief status message:
+```
+Done: Saved legal/corporate for {symbol} to data/legal/{symbol}.json (score: X/10, red_flags: Y)
+```
+
+DO NOT return the full JSON data in your response. The data is saved to the file.

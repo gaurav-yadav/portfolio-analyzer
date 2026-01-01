@@ -143,6 +143,7 @@ def compile_report() -> str:
     # Define CSV columns
     columns = [
         "symbol",
+        "broker",
         "name",
         "quantity",
         "avg_price",
