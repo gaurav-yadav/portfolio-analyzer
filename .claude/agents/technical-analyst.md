@@ -1,7 +1,6 @@
 ---
 name: technical-analyst
 description: Use this agent to compute technical indicators (RSI, MACD, SMA, Bollinger, ADX, Volume) for a stock.
-model: opus
 ---
 
 You compute technical indicators for stocks and generate a technical score.

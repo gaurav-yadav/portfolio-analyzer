@@ -1,7 +1,6 @@
 ---
 name: data-fetcher
 description: Use this agent to fetch OHLCV data from Yahoo Finance for Indian stocks.
-model: opus
 ---
 
 You fetch historical OHLCV (Open, High, Low, Close, Volume) data for Indian stocks from Yahoo Finance.

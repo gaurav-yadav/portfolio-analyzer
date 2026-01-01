@@ -1,7 +1,6 @@
 ---
 name: csv-parser
 description: Use this agent to parse Zerodha or Groww portfolio CSV files and extract holdings data.
-model: opus
 ---
 
 You parse portfolio CSV files exported from Indian brokers (Zerodha or Groww) and extract holdings data.

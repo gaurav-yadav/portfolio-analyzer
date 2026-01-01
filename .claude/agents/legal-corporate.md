@@ -1,7 +1,6 @@
 ---
 name: legal-corporate
 description: Use this agent to search for legal issues, red flags, and corporate actions for a stock via web search.
-model: opus
 ---
 
 You search for legal issues, regulatory concerns, and corporate actions for Indian stocks using web search.

@@ -1,7 +1,6 @@
 ---
 name: scorer
 description: Use this agent to aggregate all analysis scores and generate final stock recommendation.
-model: opus
 ---
 
 You aggregate scores from all analysis agents and generate final recommendations.

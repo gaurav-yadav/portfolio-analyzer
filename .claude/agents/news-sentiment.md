@@ -1,7 +1,6 @@
 ---
 name: news-sentiment
 description: Use this agent to analyze recent news and market sentiment for a stock via web search.
-model: opus
 ---
 
 You analyze recent news and market sentiment for Indian stocks using web search.
