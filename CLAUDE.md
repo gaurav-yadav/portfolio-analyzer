@@ -6,6 +6,12 @@ When user says **"analyze my portfolio from `<csv_path>`"** (or multiple CSVs), 
 
 ## Orchestration Steps (Optimized for Large Portfolios)
 
+### Step 0: Clean Previous Data (Important!)
+```bash
+uv run python scripts/clean.py
+```
+Clears old analysis data before new portfolio. Cache is always kept (historical OHLCV doesn't change).
+
 ### Step 1: Parse CSV(s)
 ```bash
 uv run python scripts/parse_csv.py input/kite.csv input/groww.csv
@@ -60,6 +66,7 @@ Open `dashboard/index.html` in browser and load the CSV.
 
 ```bash
 # Full pipeline (after agents complete Step 4)
+uv run python scripts/clean.py  # Clear old analysis data first!
 uv run python scripts/parse_csv.py input/portfolio.csv
 uv run python scripts/fetch_all.py
 uv run python scripts/technical_all.py
