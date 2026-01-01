@@ -6,7 +6,6 @@
     <title>Portfolio Analyzer Dashboard</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -18,7 +17,6 @@
                 </svg>
                 <h1>Portfolio Analyzer</h1>
             </div>
-            <p class="tagline">Stock analysis and investment recommendations</p>
         </header>
 
         <section class="upload-section" id="uploadSection">
@@ -39,102 +37,56 @@
         </section>
 
         <section class="dashboard" id="dashboard" style="display: none;">
-            <!-- Portfolio Health Summary (populated by JS) -->
-            <div id="healthSummary" class="card health-summary-card"></div>
-
-            <div class="summary-cards">
-                <div class="card summary-card">
-                    <div class="card-icon stocks-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
-                            <path d="M16 3v4M8 3v4"/>
-                        </svg>
-                    </div>
-                    <div class="card-content">
-                        <span class="card-label">Total Stocks</span>
-                        <span class="card-value" id="totalStocks">0</span>
-                    </div>
+            <!-- KPI Strip -->
+            <div class="kpi-strip">
+                <div class="kpi-item">
+                    <span class="kpi-value" id="totalStocks">0</span>
+                    <span class="kpi-label">Total Stocks</span>
                 </div>
-
-                <div class="card summary-card">
-                    <div class="card-icon score-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                        </svg>
-                    </div>
-                    <div class="card-content">
-                        <span class="card-label">Average Score</span>
-                        <span class="card-value" id="avgScore">0.0</span>
-                    </div>
+                <div class="kpi-item">
+                    <span class="kpi-value" id="healthScore">0.0</span>
+                    <span class="kpi-label">Health Score</span>
                 </div>
-
-                <div class="card summary-card">
-                    <div class="card-icon health-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-                        </svg>
-                    </div>
-                    <div class="card-content">
-                        <span class="card-label">Portfolio Health</span>
-                        <span class="card-value" id="portfolioHealth">-</span>
-                    </div>
+                <div class="kpi-item">
+                    <span class="kpi-value" id="healthRating">-</span>
+                    <span class="kpi-label">Rating</span>
                 </div>
-
-                <div class="card summary-card">
-                    <div class="card-icon value-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="12" y1="1" x2="12" y2="23"/>
-                            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-                        </svg>
-                    </div>
-                    <div class="card-content">
-                        <span class="card-label">Total Value</span>
-                        <span class="card-value" id="totalValue">₹0</span>
-                    </div>
+                <div class="kpi-item">
+                    <span class="kpi-value blurred" id="totalValue" onclick="this.classList.toggle('blurred')">₹0</span>
+                    <span class="kpi-label">Total Value <span class="reveal-hint">(click)</span></span>
                 </div>
             </div>
 
-            <div class="charts-section">
-                <div class="card chart-card">
-                    <h3>Recommendation Distribution</h3>
-                    <div class="chart-container">
-                        <canvas id="recommendationChart"></canvas>
-                    </div>
-                </div>
-
-                <div class="card chart-card">
-                    <h3>Score Distribution</h3>
-                    <div class="chart-container">
-                        <canvas id="scoreChart"></canvas>
-                    </div>
-                </div>
+            <!-- Recommendation Distribution Bar -->
+            <div class="distribution-section">
+                <div class="stacked-bar" id="stackedBar"></div>
+                <div class="distribution-legend" id="distributionLegend"></div>
             </div>
 
-            <div class="card table-card">
-                <div class="table-header">
-                    <h3>Stock Analysis</h3>
-                    <div class="table-actions">
-                        <input type="text" id="searchInput" placeholder="Search stocks..." class="search-input">
-                        <button class="btn btn-secondary" id="resetBtn">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-                                <path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                <path d="M9 12l2 2 4-4"/>
-                            </svg>
-                            Reset
-                        </button>
-                    </div>
+            <!-- Filter Tabs + Search -->
+            <div class="table-controls">
+                <div class="filter-tabs" id="filterTabs">
+                    <button class="filter-tab active" data-filter="all">All</button>
+                    <button class="filter-tab" data-filter="buy">Buy</button>
+                    <button class="filter-tab" data-filter="hold">Hold</button>
+                    <button class="filter-tab" data-filter="sell">Sell</button>
+                    <button class="filter-tab" data-filter="red-flags">Red Flags</button>
                 </div>
+                <input type="text" id="searchInput" placeholder="Search symbol or name..." class="search-input">
+            </div>
+
+            <!-- Decision Table -->
+            <div class="table-card">
                 <div class="table-wrapper">
                     <table id="stocksTable">
                         <thead>
                             <tr>
-                                <th data-sort="symbol">Symbol <span class="sort-icon">↕</span></th>
-                                <th title="T=Technical, F=Fundamental, N=News Sentiment, L=Legal/Corporate">Scores (T/F/N/L)</th>
-                                <th data-sort="pnl_pct">P&L % <span class="sort-icon">↕</span></th>
-                                <th data-sort="overall_score">Score <span class="sort-icon">↕</span></th>
-                                <th data-sort="recommendation">Recommendation <span class="sort-icon">↕</span></th>
+                                <th data-sort="symbol">Symbol</th>
+                                <th data-sort="recommendation">Reco</th>
+                                <th data-sort="overall_score" class="num">Score</th>
+                                <th data-sort="pnl_pct" class="num">PnL %</th>
+                                <th>Flags</th>
                                 <th>Summary</th>
-                                <th>Red Flags</th>
                             </tr>
                         </thead>
                         <tbody id="stocksTableBody">
@@ -144,24 +96,22 @@
             </div>
         </section>
 
+        <!-- Stock Detail Modal -->
         <div class="modal" id="stockModal">
             <div class="modal-content">
-                <div class="modal-header">
-                    <h2 id="modalTitle">Stock Details</h2>
-                    <button class="modal-close" id="modalClose">&times;</button>
+                <div class="modal-header" id="modalHeader">
+                    <div class="modal-title-row">
+                        <h2 id="modalTitle">Stock Details</h2>
+                        <button class="modal-close" id="modalClose">&times;</button>
+                    </div>
+                    <div class="modal-meta" id="modalMeta"></div>
                 </div>
-                <div class="modal-body" id="modalBody">
-                </div>
+                <div class="modal-body" id="modalBody"></div>
             </div>
         </div>
 
         <footer class="footer">
-            <p>Portfolio Analyzer &mdash; Open Source Stock Analysis Tool</p>
-            <p class="footer-links">
-                <a href="https://github.com">GitHub</a> &bull;
-                <a href="#">Documentation</a> &bull;
-                <a href="#">Report Issue</a>
-            </p>
+            <p>Portfolio Analyzer &mdash; Open Source</p>
         </footer>
     </div>
 
