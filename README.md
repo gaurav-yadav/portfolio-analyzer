@@ -46,7 +46,7 @@ A practical, opinionated toolkit for Indian stock investors: run a quick check o
 ### Setup
 
 ```bash
-git clone https://github.com/yourusername/portfolio-analyzer.git
+git clone https://github.com/gaurav-yadav/portfolio-analyzer.git
 cd portfolio-analyzer
 uv sync
 ```
@@ -294,7 +294,7 @@ portfolio-analyzer/
 ### Dev Setup
 
 ```bash
-git clone https://github.com/yourusername/portfolio-analyzer.git
+git clone https://github.com/gaurav-yadav/portfolio-analyzer.git
 cd portfolio-analyzer
 uv sync
 ```
