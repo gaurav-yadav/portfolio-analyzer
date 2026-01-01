@@ -146,7 +146,8 @@ function parseStockRow(row) {
     };
 
     const symbol = get('symbol', 'Symbol', 'SYMBOL', 'instrument', 'Instrument');
-    if (!symbol || symbol.includes('===') || symbol.includes('Total') || symbol.includes('Portfolio')) return null;
+    if (!symbol || symbol.includes('===') || symbol.includes('Total') || symbol.includes('Portfolio') ||
+        symbol.includes('RECOMMENDATION') || symbol.includes('Report Generated') || symbol.includes('OVERALL')) return null;
 
     const parseNum = v => v ? parseFloat(String(v).replace(/[₹,%]/g, '')) : 0;
 
