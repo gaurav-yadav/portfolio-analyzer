@@ -103,6 +103,11 @@ analyze my portfolio from input/your_holdings.csv
 
 Results are saved to `output/analysis_YYYYMMDD_HHMMSS.csv`
 
+**Interactive Dashboard:**
+1. Open `dashboard/index.html` in your browser
+2. Click "Select CSV File" and load your analysis CSV
+3. View charts, sort by score, and click rows for details
+
 ## What Happens
 
 ```
