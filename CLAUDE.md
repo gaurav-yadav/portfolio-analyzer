@@ -30,10 +30,20 @@ For EACH stock, launch these **4 agents IN PARALLEL**:
 ### Step 4: Score (Parallel)
 After all Step 3 agents complete, launch the `scorer` agent for each stock IN PARALLEL.
 
-### Step 5: Compile Results
-Read all `data/scores/*.json` files and compile final CSV to `output/analysis_YYYYMMDD_HHMMSS.csv`
+### Step 5: Compile Report
+Run the compile script to generate final report with portfolio health summary:
+
+```bash
+uv run python scripts/compile_report.py
+```
+
+This creates:
+- `output/analysis_YYYYMMDD_HHMMSS.csv` - Full report with portfolio health footer
 
 Report summary table with recommendations.
+
+### Step 6: View Dashboard (Optional)
+Tell user they can open `dashboard/index.html` in browser and load the CSV for visual dashboard.
 
 ---
 
@@ -111,11 +121,30 @@ Report summary table with recommendations.
 | >= 3.0 | SELL |
 | < 3.0 | STRONG SELL |
 
+## Configurable Weights
+
+Technical indicator weights can be customized in `config/technical_weights.csv`:
+```
+indicator,weight,description
+rsi,0.20,Relative Strength Index
+macd,0.20,Moving Average Convergence Divergence
+trend,0.25,Price trend based on SMA50/200
+bollinger,0.10,Bollinger Bands
+adx,0.15,Average Directional Index
+volume,0.10,Volume analysis
+```
+
 ## Directory Structure
 
 ```
 portfolio-analyzer/
 ├── .claude/agents/     # Agent definitions
+├── config/             # Configuration files
+│   └── technical_weights.csv
+├── dashboard/          # HTML dashboard
+│   ├── index.html
+│   ├── style.css
+│   └── app.js
 ├── input/              # CSV files go here
 ├── output/             # Final analysis reports
 ├── data/               # Intermediate JSON (written by agents)

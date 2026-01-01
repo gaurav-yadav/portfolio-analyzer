@@ -13,6 +13,7 @@ Output:
     Prints JSON to stdout
 """
 
+import csv
 import json
 import sys
 from datetime import datetime
@@ -25,6 +26,59 @@ import pandas_ta as ta
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.helpers import save_json
+
+
+# Default weights if config file is missing
+DEFAULT_WEIGHTS = {
+    "rsi": 1/6,
+    "macd": 1/6,
+    "trend": 1/6,
+    "bollinger": 1/6,
+    "adx": 1/6,
+    "volume": 1/6,
+}
+
+
+def load_technical_weights(config_path: Path) -> dict:
+    """
+    Load technical indicator weights from CSV config file.
+
+    Returns dict mapping indicator name to weight.
+    Falls back to equal weights if config file is missing or invalid.
+    """
+    if not config_path.exists():
+        print(f"Config file not found at {config_path}, using equal weights", file=sys.stderr)
+        return DEFAULT_WEIGHTS.copy()
+
+    try:
+        weights = {}
+        with open(config_path, "r", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                indicator = row["indicator"].strip().lower()
+                weight = float(row["weight"])
+                weights[indicator] = weight
+
+        # Validate that all required indicators are present
+        required_indicators = {"rsi", "macd", "trend", "bollinger", "adx", "volume"}
+        missing = required_indicators - set(weights.keys())
+        if missing:
+            print(f"Warning: Missing indicators in config: {missing}, using equal weights", file=sys.stderr)
+            return DEFAULT_WEIGHTS.copy()
+
+        # Validate weights sum to approximately 1.0
+        total_weight = sum(weights[ind] for ind in required_indicators)
+        if abs(total_weight - 1.0) > 0.01:
+            print(f"Warning: Weights sum to {total_weight:.4f}, not 1.0. Normalizing.", file=sys.stderr)
+            for ind in required_indicators:
+                weights[ind] = weights[ind] / total_weight
+
+        print(f"Loaded technical weights from {config_path}", file=sys.stderr)
+        return weights
+
+    except Exception as e:
+        print(f"Error reading config file: {e}, using equal weights", file=sys.stderr)
+        return DEFAULT_WEIGHTS.copy()
 
 
 def score_rsi(rsi: float) -> int:
@@ -127,8 +181,21 @@ def score_volume(volume_ratio: float, is_up_day: bool) -> int:
         return 5  # Normal volume
 
 
-def compute_technical_indicators(df: pd.DataFrame) -> dict:
-    """Compute all technical indicators for the given OHLCV data."""
+def compute_technical_indicators(df: pd.DataFrame, weights: dict = None) -> dict:
+    """
+    Compute all technical indicators for the given OHLCV data.
+
+    Args:
+        df: DataFrame with OHLCV columns
+        weights: Dict mapping indicator names to weights. If None, uses equal weights.
+
+    Returns:
+        Dict with indicators, scores, and weighted technical_score.
+    """
+    # Use equal weights if not provided
+    if weights is None:
+        weights = DEFAULT_WEIGHTS.copy()
+
     # Ensure we have enough data
     if len(df) < 50:
         raise ValueError(f"Not enough data: {len(df)} rows, need at least 50")
@@ -225,12 +292,14 @@ def compute_technical_indicators(df: pd.DataFrame) -> dict:
         "volume": score_volume(latest.get("volume_ratio"), is_up_day),
     }
 
-    # Calculate overall technical score
-    technical_score = round(sum(scores.values()) / len(scores), 1)
+    # Calculate overall technical score using weighted average
+    technical_score = sum(scores[ind] * weights[ind] for ind in scores.keys())
+    technical_score = round(technical_score, 1)
 
     return {
         "indicators": indicators,
         "scores": scores,
+        "weights": {ind: round(weights[ind], 4) for ind in scores.keys()},
         "technical_score": technical_score,
         "data_points": len(df),
     }
@@ -266,9 +335,13 @@ def main():
         print(f"Error: Missing columns: {missing_cols}", file=sys.stderr)
         sys.exit(1)
 
+    # Load technical weights from config
+    config_path = base_path / "config" / "technical_weights.csv"
+    weights = load_technical_weights(config_path)
+
     # Compute indicators
     try:
-        result = compute_technical_indicators(df)
+        result = compute_technical_indicators(df, weights)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -280,6 +353,7 @@ def main():
         "data_points": result["data_points"],
         "indicators": result["indicators"],
         "scores": result["scores"],
+        "weights": result["weights"],
         "technical_score": result["technical_score"],
     }
 

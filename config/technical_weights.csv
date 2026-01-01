@@ -1,0 +1,7 @@
+indicator,weight,description
+rsi,0.20,Relative Strength Index - momentum oscillator measuring overbought/oversold conditions
+macd,0.20,Moving Average Convergence Divergence - trend-following momentum indicator
+trend,0.25,Price trend based on SMA50 and SMA200 crossovers
+bollinger,0.10,Bollinger Bands - volatility indicator showing price relative to bands
+adx,0.15,Average Directional Index - trend strength indicator
+volume,0.10,Volume analysis - comparing current volume to 20-day average

@@ -49,20 +49,37 @@ def find_column(row: dict, *patterns: str) -> str | None:
 
 
 def parse_zerodha_row(row: dict) -> dict | None:
-    """Parse a Zerodha CSV row."""
+    """Parse a Zerodha CSV row (supports old and new Kite formats)."""
     symbol = find_column(row, "instrument")
     if not symbol:
         return None
 
+    # Skip empty rows or header-like rows
+    if symbol.lower() in ["instrument", ""]:
+        return None
+
     quantity = clean_numeric(find_column(row, "qty"))
+
+    # New Kite format: "Avg. cost", Old format: "Avg. cost" or similar
     avg_price = clean_numeric(find_column(row, "avg"))
+
+    # Get LTP (Last Traded Price) if available
+    ltp = clean_numeric(find_column(row, "ltp"))
+
+    # Get P&L percentage if available
+    pnl = clean_numeric(find_column(row, "p&l"))
+    net_chg = clean_numeric(find_column(row, "net", "chg"))
+
+    # Get invested and current value
+    invested = clean_numeric(find_column(row, "invested"))
+    cur_val = clean_numeric(find_column(row, "cur", "val"))
 
     if quantity is None or avg_price is None:
         return None
 
     normalized = normalize_symbol(symbol)
 
-    return {
+    result = {
         "symbol": normalized,
         "symbol_yf": create_yf_symbol(normalized),
         "name": normalized,  # Zerodha doesn't provide company name
@@ -70,6 +87,20 @@ def parse_zerodha_row(row: dict) -> dict | None:
         "avg_price": avg_price,
         "broker": "zerodha",
     }
+
+    # Add optional fields if available
+    if ltp is not None:
+        result["ltp"] = ltp
+    if invested is not None:
+        result["invested"] = invested
+    if cur_val is not None:
+        result["current_value"] = cur_val
+    if pnl is not None:
+        result["pnl"] = pnl
+    if net_chg is not None:
+        result["net_change_pct"] = net_chg
+
+    return result
 
 
 def parse_groww_row(row: dict) -> dict | None:
