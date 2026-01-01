@@ -1,18 +1,27 @@
 # Portfolio Analyzer
 
-AI-powered stock portfolio analyzer for Indian brokers (Zerodha/Groww). Uses Claude Code agents to analyze your holdings with technical indicators, fundamental research, news sentiment, and legal/corporate signals.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+AI-powered stock portfolio analyzer **and scanner** for Indian markets. Analyze your existing holdings (Zerodha/Groww) with technical indicators, fundamental research, news sentiment, and legal signals—or discover new opportunities with the built-in stock scanner.
 <img width="1113" height="603" alt="Screenshot 2026-01-01 at 8 57 11 PM" src="https://github.com/user-attachments/assets/78b377b9-4848-4321-8e69-3af09bd39c68" />
 <img width="423" height="524" alt="Screenshot 2026-01-01 at 8 56 56 PM" src="https://github.com/user-attachments/assets/05fd1a5a-fa04-4f04-84b1-4e47e4fc9de8" />
 
 
 ## Features
 
+### Portfolio Analysis
 - **CSV Import** - Drop your Zerodha or Groww holdings CSV
 - **Technical Analysis** - RSI, MACD, SMA, Bollinger Bands, ADX
 - **Fundamental Research** - Quarterly results, P/E ratios, growth metrics
 - **News Sentiment** - Recent news, analyst ratings, target prices
 - **Legal Signals** - SEBI issues, lawsuits, major contracts
 - **Hardened Scoring** - Conservative recommendations with safety gates
+
+### Stock Scanner
+- **Multi-Signal Scanning** - RSI oversold, MACD crossover, Golden Cross, volume breakouts, 52-week highs
+- **Watchlist Tracking** - Add promising stocks, track entry prices
+- **Performance Reports** - Monitor returns on your picks over time
+- **Technical Verification** - Full analysis before committing to watchlist
 
 ---
 
@@ -112,7 +121,7 @@ Results are saved to `output/analysis_YYYYMMDD_HHMMSS.csv`
 
 ```
 1. Parse your CSV → extract holdings
-2. Fetch OHLCV data from Yahoo Finance (5 stocks in parallel)
+2. Fetch OHLCV data from Yahoo Finance (sequential with throttling)
 3. For each stock, run 4 analyses in parallel:
    - Technical indicators (RSI, MACD, SMA, Bollinger, ADX)
    - Fundamental research (quarterly results, P/E, growth)
@@ -121,6 +130,73 @@ Results are saved to `output/analysis_YYYYMMDD_HHMMSS.csv`
 4. Score each stock
 5. Generate final report with recommendations
 ```
+
+---
+
+## Stock Scanner
+
+Discover new investment opportunities by scanning for technical signals across NSE stocks.
+
+### Run a Scan
+
+```
+> run stock scanner
+
+Launching 5 parallel scan agents...
+  - RSI Oversold: Found 12 stocks
+  - MACD Crossover: Found 8 stocks
+  - Golden Cross: Found 10 stocks
+  - Volume Breakout: Found 7 stocks
+  - 52-Week High: Found 15 stocks
+
+Top picks by category:
+  RSI Oversold: DCMSRIND (RSI 15), ATMASTCO (RSI 17)
+  MACD Crossover: YUKENIND, IREDA
+  Golden Cross: KESORAMIND, BSOFT
+```
+
+### Verify Before Adding
+
+Run full technical analysis on promising stocks:
+
+```bash
+uv run python scripts/verify_scan.py VPRPL IREDA RVNL COALINDIA
+```
+
+Output:
+```
+================================================================================
+Symbol       Score   Rec          RSI      MACD     Trend        52W
+================================================================================
+RVNL         8.0     STRONG BUY   38.0     Bullish  STRONG UP    5.2% off
+IREDA        7.0     BUY          45.0     Bullish  STRONG UP    8.1% off
+VPRPL        6.5     BUY          21.0     Bullish  UP           15.3% off
+COALINDIA    5.5     HOLD         52.0     Bearish  UP           12.0% off
+================================================================================
+```
+
+### Manage Watchlist
+
+```bash
+# Add stocks
+uv run python scripts/watchlist.py add RVNL rsi_oversold 245.50
+
+# View watchlist with prices
+uv run python scripts/watchlist.py list -p
+
+# Track performance
+uv run python scripts/track_performance.py
+```
+
+Performance output:
+```
+Symbol       Return     Days     Signal             Entry      Current
+----------------------------------------------------------------------
+DCMSRIND     +18.1%     14       rsi_oversold       Rs 245     Rs 290
+YUKENIND     +5.3%      7        macd_crossover     Rs 1030    Rs 1085
+```
+
+---
 
 ## Scoring System
 
@@ -220,20 +296,33 @@ The **technical_score** is the weighted average of all 6 indicator scores.
 | Column | Description |
 |--------|-------------|
 | symbol | Stock symbol |
+| broker | Source broker (zerodha/groww) |
 | name | Company name |
 | quantity | Shares held |
+| avg_price | Average purchase price |
 | current_price | Latest price |
 | pnl_pct | Profit/Loss % |
-| technical_score | Technical indicators (1-10) |
+| rsi | RSI value (14-day) |
+| rsi_score | RSI score (1-10) |
+| macd_score | MACD score (1-10) |
+| trend_score | Trend score (1-10) |
+| bollinger_score | Bollinger score (1-10) |
+| adx_score | ADX score (1-10) |
+| volume_score | Volume score (1-10) |
+| technical_score | Technical composite (1-10) |
 | fundamental_score | Financials (1-10) |
 | news_sentiment_score | News/analyst sentiment (1-10) |
 | legal_corporate_score | Legal signals (1-10) |
 | overall_score | Weighted final score |
 | recommendation | STRONG BUY / BUY / HOLD / SELL / STRONG SELL |
-| confidence | HIGH / MEDIUM / LOW - signal alignment quality |
-| gate_flags | Safety gates triggered (e.g., weak_trend_gate) |
-| red_flags | Any severe concerns |
+| confidence | HIGH / MEDIUM / LOW - signal alignment |
+| coverage | Data sources present (e.g., TFNL) |
+| coverage_pct | % of analysis complete |
+| gate_flags | Safety gates triggered |
 | summary | Brief analysis summary |
+| red_flags | Any severe concerns |
+
+**Note:** The CSV includes a portfolio summary footer after the data rows. Use `pandas.read_csv(..., skipfooter=N)` or filter rows where `symbol` is empty to get clean tabular data.
 
 ## Sample Output
 
@@ -264,10 +353,21 @@ Report saved to: output/analysis_20260101_120000.csv
 portfolio-analyzer/
 ├── input/              # Put your CSV files here
 ├── output/             # Analysis reports generated here
-├── .claude/agents/     # AI agent definitions (7 agents)
+├── .claude/agents/     # AI agent definitions
 ├── scripts/            # Python analysis scripts
-├── data/               # Intermediate analysis data
-└── cache/              # Cached market data (18hr freshness)
+├── data/
+│   ├── holdings.json   # Parsed portfolio
+│   ├── technical/      # Portfolio technical analysis
+│   ├── scan_technical/ # Scanner verification results
+│   ├── fundamentals/   # Fundamental research
+│   ├── news/           # News sentiment
+│   ├── legal/          # Legal/corporate signals
+│   ├── scores/         # Final scores
+│   ├── scans/          # Scanner results (timestamped)
+│   ├── scan_history/   # Per-stock tracking history
+│   └── watchlist.json  # Your tracked stocks
+├── cache/ohlcv/        # Cached OHLCV data (18hr freshness)
+└── dashboard/          # Interactive HTML dashboard
 ```
 
 ## Requirements
