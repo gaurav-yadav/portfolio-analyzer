@@ -1,6 +1,9 @@
 # Portfolio Analyzer
 
 AI-powered stock portfolio analyzer for Indian brokers (Zerodha/Groww). Uses Claude Code agents to analyze your holdings with technical indicators, fundamental research, news sentiment, and legal/corporate signals.
+<img width="940" height="711" alt="Screenshot 2026-01-01 at 1 28 08 PM" src="https://github.com/user-attachments/assets/14a9807d-4083-4c0e-8409-a27f953107fa" />
+<img width="403" height="666" alt="Screenshot 2026-01-01 at 1 27 40 PM" src="https://github.com/user-attachments/assets/f849cf85-6504-45a5-8c0b-35797d26ebca" />
+
 
 ## Features
 
