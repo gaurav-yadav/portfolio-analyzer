@@ -404,6 +404,11 @@ td {
     color: var(--strong-sell);
 }
 
+.recommendation-insufficient {
+    background-color: #e2e8f0;
+    color: #475569;
+}
+
 /* Score badge */
 .score-badge {
     display: inline-flex;
@@ -741,6 +746,7 @@ td {
 .dist-hold { background-color: var(--hold); }
 .dist-sell { background-color: var(--sell); }
 .dist-strong-sell { background-color: var(--strong-sell); }
+.dist-insufficient { background-color: #94a3b8; }
 
 .dist-count {
     font-size: 0.8125rem;
@@ -1016,6 +1022,10 @@ tr.has-red-flag:hover {
     color: var(--sell);
 }
 
+.conf-na {
+    color: #64748b;
+}
+
 .confidence-badge.conf-high {
     background-color: #d1fae5;
 }
@@ -1026,6 +1036,10 @@ tr.has-red-flag:hover {
 
 .confidence-badge.conf-low {
     background-color: #fee2e2;
+}
+
+.confidence-badge.conf-na {
+    background-color: #e2e8f0;
 }
 
 /* Gate flags */
@@ -1052,6 +1066,28 @@ tr.has-red-flag:hover {
 
 .has-gate-flag {
     background-color: #fffbeb;
+}
+
+/* Coverage notice */
+.coverage-notice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    background-color: #e0f2fe;
+    border: 1px solid #0ea5e9;
+    border-radius: var(--radius-sm);
+    font-size: 0.8125rem;
+    color: #0369a1;
+}
+
+.coverage-icon {
+    font-size: 1rem;
+}
+
+.coverage-text {
+    font-weight: 500;
 }
 
 /* Responsive for new components */

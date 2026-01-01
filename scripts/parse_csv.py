@@ -229,16 +229,39 @@ def main():
             print(f"Error parsing {csv_file}: {e}", file=sys.stderr)
             sys.exit(1)
 
-    # Deduplicate: same symbol + same broker = keep first occurrence
-    seen = set()
-    unique_holdings = []
+    # Aggregate duplicates: same symbol + same broker = weighted average price
+    aggregated = {}
     for h in all_holdings:
         key = (h["symbol"], h["broker"])
-        if key not in seen:
-            seen.add(key)
-            unique_holdings.append(h)
+        if key not in aggregated:
+            aggregated[key] = h.copy()
         else:
-            print(f"Skipping duplicate: {h['symbol']} from {h['broker']}", file=sys.stderr)
+            # Aggregate: combine quantities and compute weighted average price
+            existing = aggregated[key]
+            old_qty = existing["quantity"]
+            old_price = existing["avg_price"]
+            new_qty = h["quantity"]
+            new_price = h["avg_price"]
+
+            total_qty = old_qty + new_qty
+            # Weighted average price
+            if total_qty > 0:
+                weighted_avg = (old_qty * old_price + new_qty * new_price) / total_qty
+            else:
+                weighted_avg = old_price
+
+            existing["quantity"] = total_qty
+            existing["avg_price"] = round(weighted_avg, 2)
+
+            # Sum invested/current_value if present in either row
+            if "invested" in h:
+                existing["invested"] = existing.get("invested", 0) + h["invested"]
+            if "current_value" in h:
+                existing["current_value"] = existing.get("current_value", 0) + h["current_value"]
+
+            print(f"Aggregated duplicate: {h['symbol']} from {h['broker']} (total qty: {total_qty})", file=sys.stderr)
+
+    unique_holdings = list(aggregated.values())
 
     # Save to data/holdings.json
     output_path = Path(__file__).parent.parent / "data" / "holdings.json"

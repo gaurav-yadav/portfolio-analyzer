@@ -52,6 +52,9 @@ def clean_numeric(value: str) -> float | None:
     - "2450.50"
     - "-5.2%"
     - "N/A"
+    - "₹2,450.50" (Unicode rupee)
+    - "Rs. 2,450" or "Rs 2450"
+    - "INR 2,450.50"
 
     Args:
         value: String representation of number
@@ -63,7 +66,14 @@ def clean_numeric(value: str) -> float | None:
         return None
 
     try:
-        cleaned = re.sub(r"[,%\s]", "", str(value))
+        value_str = str(value)
+        # Remove currency symbols and prefixes
+        # ₹ (Unicode rupee), Rs., Rs, INR
+        cleaned = re.sub(r"[₹]", "", value_str)
+        cleaned = re.sub(r"\bRs\.?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bINR\s*", "", cleaned, flags=re.IGNORECASE)
+        # Remove commas, percentage signs, whitespace
+        cleaned = re.sub(r"[,%\s]", "", cleaned)
         return float(cleaned)
     except (ValueError, TypeError):
         return None
@@ -75,9 +85,13 @@ def ensure_data_dirs():
     dirs = [
         base / "data",
         base / "data" / "technical",
+        base / "data" / "scan_technical",  # Separate from portfolio analysis
         base / "data" / "fundamentals",
         base / "data" / "news",
         base / "data" / "legal",
+        base / "data" / "scores",
+        base / "data" / "scans",
+        base / "data" / "scan_history",
         base / "cache" / "ohlcv",
     ]
     for d in dirs:

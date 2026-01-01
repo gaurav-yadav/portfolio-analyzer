@@ -20,43 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.helpers import load_json
-
-
-# Recommendation thresholds (matching score_stock.py)
-THRESHOLDS = {
-    "strong_buy": 8.0,
-    "buy": 6.5,
-    "hold": 4.5,
-    "sell": 3.0,
-}
-
-
-def get_recommendation(score: float) -> str:
-    """Map score to recommendation."""
-    if score >= THRESHOLDS["strong_buy"]:
-        return "STRONG BUY"
-    elif score >= THRESHOLDS["buy"]:
-        return "BUY"
-    elif score >= THRESHOLDS["hold"]:
-        return "HOLD"
-    elif score >= THRESHOLDS["sell"]:
-        return "SELL"
-    else:
-        return "STRONG SELL"
-
-
-def get_portfolio_health_label(avg_score: float) -> str:
-    """Get overall portfolio health assessment."""
-    if avg_score >= 7.5:
-        return "Excellent"
-    elif avg_score >= 6.5:
-        return "Good"
-    elif avg_score >= 5.5:
-        return "Fair"
-    elif avg_score >= 4.5:
-        return "Needs Attention"
-    else:
-        return "At Risk"
+from utils.config import THRESHOLDS, get_recommendation, get_portfolio_health_label
 
 
 def get_overall_recommendation(distribution: dict, avg_score: float) -> str:
@@ -171,6 +135,8 @@ def compile_report() -> str:
         "overall_score",
         "recommendation",
         "confidence",
+        "coverage",
+        "coverage_pct",
         "gate_flags",
         "summary",
         "red_flags",

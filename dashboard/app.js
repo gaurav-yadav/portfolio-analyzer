@@ -17,7 +17,8 @@ const RECOMMENDATIONS = {
     'BUY': { class: 'buy', color: '#10b981' },
     'HOLD': { class: 'hold', color: '#f59e0b' },
     'SELL': { class: 'sell', color: '#ef4444' },
-    'STRONG SELL': { class: 'strong-sell', color: '#b91c1c' }
+    'STRONG SELL': { class: 'strong-sell', color: '#b91c1c' },
+    'INSUFFICIENT DATA': { class: 'insufficient', color: '#64748b' }
 };
 
 function init() {
@@ -148,13 +149,27 @@ function parseStockRow(row) {
         return null;
     };
 
+    const isMissing = value => {
+        if (value === null || value === undefined) return true;
+        const str = String(value).trim();
+        if (!str) return true;
+        const normalized = str.toUpperCase();
+        return normalized === 'N/A' || normalized === 'NA' || normalized === '-' || normalized === 'NULL';
+    };
+
+    const parseNum = value => {
+        if (isMissing(value)) return null;
+        const cleaned = String(value).replace(/[₹,%]/g, '').replace(/,/g, '').trim();
+        if (!cleaned) return null;
+        const num = Number(cleaned);
+        return Number.isFinite(num) ? num : null;
+    };
+
     const symbol = get('symbol', 'Symbol', 'SYMBOL', 'instrument', 'Instrument');
     if (!symbol || symbol.includes('===') || symbol.includes('Total') || symbol.includes('Portfolio') ||
         symbol.includes('RECOMMENDATION') || symbol.includes('Report Generated') || symbol.includes('OVERALL') ||
         symbol.includes('SIGNAL CONFIDENCE') || symbol.includes('HIGH:') || symbol.includes('MEDIUM:') ||
         symbol.includes('LOW:') || symbol.includes('Gated')) return null;
-
-    const parseNum = v => v ? parseFloat(String(v).replace(/[₹,%]/g, '')) : 0;
 
     return {
         symbol: symbol,
@@ -183,6 +198,8 @@ function parseStockRow(row) {
         overall_score: parseNum(get('overall_score', 'score')),
         recommendation: get('recommendation', 'Recommendation') || 'HOLD',
         confidence: get('confidence', 'Confidence') || 'MEDIUM',
+        coverage: get('coverage', 'Coverage'),
+        coverage_pct: parseNum(get('coverage_pct', 'Coverage %', 'coverage_pct')),
         gate_flags: get('gate_flags', 'Gate Flags') || '',
         red_flags: get('red_flags', 'Red Flags') || '',
         summary: get('summary', 'Summary') || ''
@@ -192,7 +209,8 @@ function parseStockRow(row) {
 const CONFIDENCE = {
     'HIGH': { class: 'conf-high', icon: '●●●', color: '#059669' },
     'MEDIUM': { class: 'conf-medium', icon: '●●○', color: '#f59e0b' },
-    'LOW': { class: 'conf-low', icon: '●○○', color: '#ef4444' }
+    'LOW': { class: 'conf-low', icon: '●○○', color: '#ef4444' },
+    'N/A': { class: 'conf-na', icon: '○○○', color: '#64748b' }
 };
 
 function getHealthRating(score) {
@@ -359,25 +377,30 @@ function updateTable() {
         return;
     }
 
-    tbody.innerHTML = stocks.map(s => `
-        <tr onclick="showStockDetails('${s.symbol}')" class="${s.red_flags ? 'has-red-flag' : ''} ${s.gate_flags ? 'has-gate-flag' : ''}">
-            <td><strong>${s.symbol}</strong></td>
-            <td class="tech-preview">
-                <span class="mini-score" title="Technical Score (RSI: ${s.rsi?.toFixed(1) || 'N/A'})">T:${s.technical_score?.toFixed(1) || '-'}</span>
-                <span class="mini-score" title="Fundamental Score (P/E, Revenue, Growth)">F:${s.fundamental_score?.toFixed(1) || '-'}</span>
-                <span class="mini-score" title="News Sentiment Score (Recent news & analyst ratings)">N:${s.news_sentiment_score?.toFixed(1) || '-'}</span>
-                <span class="mini-score" title="Legal/Corporate Score (Red flags, lawsuits, governance)">L:${s.legal_corporate_score?.toFixed(1) || '-'}</span>
-            </td>
-            <td class="${s.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative'}">${s.pnl_pct >= 0 ? '+' : ''}${s.pnl_pct?.toFixed(1) || 0}%</td>
-            <td><span class="score-badge score-${getScoreClass(s.overall_score)}">${s.overall_score?.toFixed(1) || '-'}</span></td>
-            <td>
-                <span class="recommendation-badge recommendation-${RECOMMENDATIONS[s.recommendation]?.class || 'hold'}">${s.recommendation}</span>
-                <span class="confidence-indicator ${CONFIDENCE[s.confidence]?.class || 'conf-medium'}" title="Confidence: ${s.confidence}${s.gate_flags ? ' | Gated: ' + s.gate_flags : ''}">${CONFIDENCE[s.confidence]?.icon || '●●○'}</span>
-            </td>
-            <td class="summary-cell" title="${s.summary}">${truncate(s.summary, 50)}</td>
-            <td class="red-flag-cell">${s.red_flags ? '⚠️ ' + truncate(s.red_flags, 30) : '✓'}</td>
-        </tr>
-    `).join('');
+    tbody.innerHTML = stocks.map(s => {
+        const pnlClass = s.pnl_pct == null ? '' : (s.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative');
+        const pnlText = s.pnl_pct == null ? '-' : `${s.pnl_pct >= 0 ? '+' : ''}${s.pnl_pct.toFixed(1)}%`;
+
+        return `
+            <tr onclick="showStockDetails('${s.symbol}')" class="${s.red_flags ? 'has-red-flag' : ''} ${s.gate_flags ? 'has-gate-flag' : ''}">
+                <td><strong>${s.symbol}</strong></td>
+                <td class="tech-preview">
+                    <span class="mini-score" title="Technical Score (RSI: ${s.rsi?.toFixed(1) || 'N/A'})">T:${s.technical_score?.toFixed(1) || '-'}</span>
+                    <span class="mini-score" title="Fundamental Score (P/E, Revenue, Growth)">F:${s.fundamental_score?.toFixed(1) || '-'}</span>
+                    <span class="mini-score" title="News Sentiment Score (Recent news & analyst ratings)">N:${s.news_sentiment_score?.toFixed(1) || '-'}</span>
+                    <span class="mini-score" title="Legal/Corporate Score (Red flags, lawsuits, governance)">L:${s.legal_corporate_score?.toFixed(1) || '-'}</span>
+                </td>
+                <td class="${pnlClass}">${pnlText}</td>
+                <td><span class="score-badge score-${getScoreClass(s.overall_score)}">${s.overall_score?.toFixed(1) || '-'}</span></td>
+                <td>
+                    <span class="recommendation-badge recommendation-${RECOMMENDATIONS[s.recommendation]?.class || 'hold'}">${s.recommendation}</span>
+                    <span class="confidence-indicator ${CONFIDENCE[s.confidence]?.class || 'conf-medium'}" title="Confidence: ${s.confidence}${s.gate_flags ? ' | Gated: ' + s.gate_flags : ''}">${CONFIDENCE[s.confidence]?.icon || '●●○'}</span>
+                </td>
+                <td class="summary-cell" title="${s.summary}">${truncate(s.summary, 50)}</td>
+                <td class="red-flag-cell">${s.red_flags ? '⚠️ ' + truncate(s.red_flags, 30) : '✓'}</td>
+            </tr>
+        `;
+    }).join('');
 }
 
 function showStockDetails(symbol) {
@@ -434,26 +457,31 @@ function showStockDetails(symbol) {
             <div class="score-bar">
                 <span class="sb-label">Technical Score</span>
                 <div class="sb-track"><div class="sb-fill score-${getScoreClass(s.technical_score)}" style="width:${(s.technical_score||0)*10}%"></div></div>
-                <span class="sb-value">${s.technical_score?.toFixed(1) || '-'}/10</span>
+                <span class="sb-value">${s.technical_score?.toFixed(1) || 'N/A'}</span>
             </div>
         </div>
 
         <div class="detail-section">
             <h3>Component Scores</h3>
+            ${s.coverage && s.coverage !== 'TFNL' ? `
+            <div class="coverage-notice">
+                <span class="coverage-icon">📊</span>
+                <span class="coverage-text">Data Coverage: ${s.coverage} (${s.coverage_pct == null ? 'N/A' : s.coverage_pct}%) - Weights renormalized</span>
+            </div>` : ''}
             <div class="score-bar">
-                <span class="sb-label">Fundamental (30%)</span>
+                <span class="sb-label">Fundamental (30%)${s.fundamental_score == null ? ' ⚠️' : ''}</span>
                 <div class="sb-track"><div class="sb-fill score-${getScoreClass(s.fundamental_score)}" style="width:${(s.fundamental_score||0)*10}%"></div></div>
-                <span class="sb-value">${s.fundamental_score?.toFixed(1) || '-'}/10</span>
+                <span class="sb-value">${s.fundamental_score?.toFixed(1) || 'N/A'}</span>
             </div>
             <div class="score-bar">
-                <span class="sb-label">News Sentiment (20%)</span>
+                <span class="sb-label">News Sentiment (20%)${s.news_sentiment_score == null ? ' ⚠️' : ''}</span>
                 <div class="sb-track"><div class="sb-fill score-${getScoreClass(s.news_sentiment_score)}" style="width:${(s.news_sentiment_score||0)*10}%"></div></div>
-                <span class="sb-value">${s.news_sentiment_score?.toFixed(1) || '-'}/10</span>
+                <span class="sb-value">${s.news_sentiment_score?.toFixed(1) || 'N/A'}</span>
             </div>
             <div class="score-bar">
-                <span class="sb-label">Legal/Corporate (15%)</span>
+                <span class="sb-label">Legal/Corporate (15%)${s.legal_corporate_score == null ? ' ⚠️' : ''}</span>
                 <div class="sb-track"><div class="sb-fill score-${getScoreClass(s.legal_corporate_score)}" style="width:${(s.legal_corporate_score||0)*10}%"></div></div>
-                <span class="sb-value">${s.legal_corporate_score?.toFixed(1) || '-'}/10</span>
+                <span class="sb-value">${s.legal_corporate_score?.toFixed(1) || 'N/A'}</span>
             </div>
         </div>
 
@@ -526,6 +554,7 @@ function handleReset() {
 }
 
 function getScoreClass(score) {
+    if (score == null || Number.isNaN(score)) return 'neutral';
     if (score >= 8) return 'excellent';
     if (score >= 6.5) return 'good';
     if (score >= 4.5) return 'neutral';

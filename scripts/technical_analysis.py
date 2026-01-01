@@ -26,17 +26,7 @@ import pandas_ta as ta
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.helpers import save_json
-
-
-# Default weights if config file is missing
-DEFAULT_WEIGHTS = {
-    "rsi": 1/6,
-    "macd": 1/6,
-    "trend": 1/6,
-    "bollinger": 1/6,
-    "adx": 1/6,
-    "volume": 1/6,
-}
+from utils.config import DEFAULT_TECHNICAL_WEIGHTS as DEFAULT_WEIGHTS
 
 
 def load_technical_weights(config_path: Path) -> dict:

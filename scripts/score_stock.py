@@ -21,48 +21,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.helpers import load_json
-
-# Scoring weights
-WEIGHTS = {
-    "technical": 0.35,
-    "fundamental": 0.30,
-    "news_sentiment": 0.20,
-    "legal_corporate": 0.15,
-}
-
-# Recommendation thresholds
-THRESHOLDS = {
-    "strong_buy": 8.0,
-    "buy": 6.5,
-    "hold": 4.5,
-    "sell": 3.0,
-}
-
-# Gating thresholds for hardened recommendations
-GATES = {
-    "trend_min_for_buy": 5,        # Trend score must be >= 5 for BUY
-    "adx_weak_threshold": 4,       # ADX <= 4 is weak trend
-    "volume_min_for_weak_trend": 6,  # Volume must be >= 6 if ADX is weak
-    "news_hype_threshold": 8,      # News >= 8 is potential hype
-    "tech_min_for_news_buy": 5,    # Tech must be >= 5 to trust high news
-    "strong_buy_trend_min": 7,     # STRONG BUY requires trend >= 7
-    "strong_buy_macd_min": 6,      # STRONG BUY requires MACD >= 6
-    "strong_buy_adx_min": 6,       # STRONG BUY requires ADX >= 6
-}
-
-
-def get_recommendation(score: float) -> str:
-    """Map score to recommendation."""
-    if score >= THRESHOLDS["strong_buy"]:
-        return "STRONG BUY"
-    elif score >= THRESHOLDS["buy"]:
-        return "BUY"
-    elif score >= THRESHOLDS["hold"]:
-        return "HOLD"
-    elif score >= THRESHOLDS["sell"]:
-        return "SELL"
-    else:
-        return "STRONG SELL"
+from utils.config import (
+    COMPONENT_WEIGHTS as WEIGHTS,
+    THRESHOLDS,
+    GATES,
+    get_recommendation,
+)
 
 
 def compute_confidence(scores: dict) -> str:
@@ -128,44 +92,54 @@ def apply_influence_caps(
 
 def apply_gates(
     recommendation: str,
-    trend_score: float,
-    macd_score: float,
-    adx_score: float,
-    volume_score: float,
-    technical_score: float,
-    news_score: float,
+    trend_score: float | None,
+    macd_score: float | None,
+    adx_score: float | None,
+    volume_score: float | None,
+    technical_score: float | None,
+    news_score: float | None,
 ) -> tuple[str, list[str]]:
     """
     Apply hard gating rules to recommendation.
 
     Returns: (adjusted_recommendation, list_of_gate_flags)
+
+    Note: None values are treated as neutral (5) for gating purposes.
     """
     flags = []
 
+    # Use neutral defaults for None values in gate comparisons
+    trend = trend_score if trend_score is not None else 5
+    macd = macd_score if macd_score is not None else 5
+    adx = adx_score if adx_score is not None else 5
+    volume = volume_score if volume_score is not None else 5
+    tech = technical_score if technical_score is not None else 5
+    news = news_score if news_score is not None else 5
+
     # Gate 1: Trend gate - no BUY without trend confirmation
-    if trend_score < GATES["trend_min_for_buy"] and recommendation in ["BUY", "STRONG BUY"]:
+    if trend < GATES["trend_min_for_buy"] and recommendation in ["BUY", "STRONG BUY"]:
         recommendation = "HOLD"
         flags.append("weak_trend_gate")
 
     # Gate 2: Weak trend + volume gate
-    if (adx_score <= GATES["adx_weak_threshold"] and
-        volume_score < GATES["volume_min_for_weak_trend"] and
+    if (adx <= GATES["adx_weak_threshold"] and
+        volume < GATES["volume_min_for_weak_trend"] and
         recommendation in ["BUY", "STRONG BUY"]):
         recommendation = "HOLD"
         flags.append("trendless_no_volume_gate")
 
     # Gate 3: News override prevention
-    if (news_score >= GATES["news_hype_threshold"] and
-        technical_score < GATES["tech_min_for_news_buy"] and
+    if (news >= GATES["news_hype_threshold"] and
+        tech < GATES["tech_min_for_news_buy"] and
         recommendation == "BUY"):
         recommendation = "HOLD"
         flags.append("sentiment_without_confirmation")
 
     # Gate 4: STRONG BUY alignment - requires trend + momentum + strength
     if recommendation == "STRONG BUY":
-        if not (trend_score >= GATES["strong_buy_trend_min"] and
-                macd_score >= GATES["strong_buy_macd_min"] and
-                adx_score >= GATES["strong_buy_adx_min"]):
+        if not (trend >= GATES["strong_buy_trend_min"] and
+                macd >= GATES["strong_buy_macd_min"] and
+                adx >= GATES["strong_buy_adx_min"]):
             recommendation = "BUY"
             flags.append("strong_buy_alignment_failed")
 
@@ -391,11 +365,59 @@ def score_stock(symbol: str, broker: str | None = None) -> dict:
     news = load_json(base_path / "data" / "news" / f"{symbol_yf}.json") or {}
     legal = load_json(base_path / "data" / "legal" / f"{symbol_yf}.json") or {}
 
-    # Extract scores (default to 5 if missing)
-    technical_score = technical.get("technical_score", 5)
-    fundamental_score = fundamentals.get("fundamental_score", 5)
-    news_score = news.get("news_sentiment_score", 5)
-    legal_score = legal.get("legal_corporate_score", 5)
+    def normalize_score(value: object) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        return None
+
+    # Extract scores - treat None/non-numeric as missing data
+    technical_score = normalize_score(technical.get("technical_score"))
+    fundamental_score = normalize_score(fundamentals.get("fundamental_score"))
+    news_score = normalize_score(news.get("news_sentiment_score"))
+    legal_score = normalize_score(legal.get("legal_corporate_score"))
+
+    # Track coverage - which components have real data
+    coverage = {
+        "technical": technical_score is not None,
+        "fundamental": fundamental_score is not None,
+        "news": news_score is not None,
+        "legal": legal_score is not None,
+    }
+    coverage_count = sum(coverage.values())
+    coverage_pct = round(coverage_count / 4 * 100)
+
+    # Normalize missing scores to None for consistency
+    technical_score = technical_score if coverage["technical"] else None
+    fundamental_score = fundamental_score if coverage["fundamental"] else None
+    news_score = news_score if coverage["news"] else None
+    legal_score = legal_score if coverage["legal"] else None
+
+    # Build weights dict for present components only (renormalization)
+    active_weights = {}
+    active_scores = {}
+
+    if technical_score is not None:
+        active_weights["technical"] = WEIGHTS["technical"]
+        active_scores["technical"] = technical_score
+    if fundamental_score is not None:
+        active_weights["fundamental"] = WEIGHTS["fundamental"]
+        active_scores["fundamental"] = fundamental_score
+    if news_score is not None:
+        active_weights["news_sentiment"] = WEIGHTS["news_sentiment"]
+        active_scores["news_sentiment"] = news_score
+    if legal_score is not None:
+        active_weights["legal_corporate"] = WEIGHTS["legal_corporate"]
+        active_scores["legal_corporate"] = legal_score
+
+    # Renormalize weights to sum to 1.0
+    total_weight = sum(active_weights.values())
+    if total_weight > 0:
+        normalized_weights = {k: v / total_weight for k, v in active_weights.items()}
+    else:
+        # No data at all - default to neutral
+        normalized_weights = {}
 
     # Extract individual technical indicator scores
     tech_scores = technical.get("scores", {})
@@ -404,18 +426,33 @@ def score_stock(symbol: str, broker: str | None = None) -> dict:
     adx_score = tech_scores.get("adx", 5)
     volume_score = tech_scores.get("volume", 5)
 
-    # Apply influence caps when technicals are weak
-    capped_fundamental, capped_news, capped_legal = apply_influence_caps(
-        technical_score, fundamental_score, news_score, legal_score
-    )
+    # For display/output, use None (shown as "NA") for missing scores
+    technical_score_display = technical_score
+    fundamental_score_display = fundamental_score
+    news_score_display = news_score
+    legal_score_display = legal_score
 
-    # Calculate weighted score with capped values
-    overall_score = (
-        technical_score * WEIGHTS["technical"] +
-        capped_fundamental * WEIGHTS["fundamental"] +
-        capped_news * WEIGHTS["news_sentiment"] +
-        capped_legal * WEIGHTS["legal_corporate"]
-    )
+    # Apply influence caps when technicals are weak (only on present components)
+    if technical_score is not None and fundamental_score is not None:
+        capped_fundamental, _, _ = apply_influence_caps(
+            technical_score, fundamental_score, news_score or 5, legal_score or 5
+        )
+        active_scores["fundamental"] = capped_fundamental
+    if technical_score is not None and news_score is not None:
+        _, capped_news, _ = apply_influence_caps(
+            technical_score, fundamental_score or 5, news_score, legal_score or 5
+        )
+        active_scores["news_sentiment"] = capped_news
+
+    # Calculate weighted score using only present components with renormalized weights
+    if normalized_weights:
+        overall_score = sum(
+            active_scores[k] * normalized_weights[k]
+            for k in normalized_weights
+        )
+    else:
+        # No components available - assign neutral score
+        overall_score = 5.0
 
     # Check for severe red flags
     has_red_flag = legal.get("has_severe_red_flag", False)
@@ -425,21 +462,28 @@ def score_stock(symbol: str, broker: str | None = None) -> dict:
         overall_score = min(overall_score, 5.0)
 
     overall_score = round(overall_score, 1)
-    recommendation = get_recommendation(overall_score)
 
-    # Apply hard gating rules
-    recommendation, gate_flags = apply_gates(
-        recommendation,
-        trend_score,
-        macd_score,
-        adx_score,
-        volume_score,
-        technical_score,
-        news_score,
-    )
+    # Skip recommendations when data is incomplete
+    if coverage_count < 4:
+        recommendation = "INSUFFICIENT DATA"
+        gate_flags = ["missing_data"]
+        confidence = "N/A"
+    else:
+        recommendation = get_recommendation(overall_score)
 
-    # Compute confidence level
-    confidence = compute_confidence(tech_scores)
+        # Apply hard gating rules
+        recommendation, gate_flags = apply_gates(
+            recommendation,
+            trend_score,
+            macd_score,
+            adx_score,
+            volume_score,
+            technical_score,
+            news_score,
+        )
+
+        # Compute confidence level
+        confidence = compute_confidence(tech_scores)
 
     # Build comprehensive summary using new format
     summary = build_comprehensive_summary(technical, fundamentals, news, legal)
@@ -458,6 +502,18 @@ def score_stock(symbol: str, broker: str | None = None) -> dict:
     # Get broker from holding or parameter
     holding_broker = holding.get("broker") if holding else broker
 
+    # Build coverage string for visibility
+    coverage_parts = []
+    if coverage["technical"]:
+        coverage_parts.append("T")
+    if coverage["fundamental"]:
+        coverage_parts.append("F")
+    if coverage["news"]:
+        coverage_parts.append("N")
+    if coverage["legal"]:
+        coverage_parts.append("L")
+    coverage_str = "".join(coverage_parts) if coverage_parts else "none"
+
     result = {
         "symbol": symbol_clean,
         "symbol_yf": symbol_yf,
@@ -474,13 +530,15 @@ def score_stock(symbol: str, broker: str | None = None) -> dict:
         "bollinger_score": tech_scores.get("bollinger"),
         "adx_score": tech_scores.get("adx"),
         "volume_score": tech_scores.get("volume"),
-        "technical_score": technical_score,
-        "fundamental_score": fundamental_score,
-        "news_sentiment_score": news_score,
-        "legal_corporate_score": legal_score,
+        "technical_score": technical_score_display,
+        "fundamental_score": fundamental_score_display,
+        "news_sentiment_score": news_score_display,
+        "legal_corporate_score": legal_score_display,
         "overall_score": overall_score,
         "recommendation": recommendation,
         "confidence": confidence,
+        "coverage": coverage_str,
+        "coverage_pct": coverage_pct,
         "gate_flags": ", ".join(gate_flags) if gate_flags else "",
         "red_flags": ", ".join(red_flags) if red_flags else "",
         "summary": summary,
