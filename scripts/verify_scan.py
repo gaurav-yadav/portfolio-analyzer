@@ -39,7 +39,7 @@ except ImportError:
     HAS_YFINANCE = False
 
 from utils.helpers import load_json, save_json
-from utils.config import THRESHOLDS
+from utils.config import THRESHOLDS, SCAN_SETUP_RULES
 
 # Rate limiting config
 BATCH_SIZE = 5              # Fetch 5 stocks at a time
@@ -80,6 +80,177 @@ def normalize_symbol(s: str) -> str:
 def display_symbol(yf_symbol: str) -> str:
     """Get display symbol without exchange suffix."""
     return yf_symbol.replace(".NS", "").replace(".BO", "")
+
+
+def compute_pivot_lows(df: pd.DataFrame, lookback: int = 90, k: int = 2) -> list[tuple[int, float]]:
+    """
+    Find pivot lows using a simple k-bar window.
+
+    A pivot low at index i exists if Low[i] is the minimum of Low[i-k : i+k+1].
+
+    Args:
+        df: DataFrame with 'Low' column
+        lookback: Number of days to look back from the end
+        k: Window size (5-bar pivot uses k=2)
+
+    Returns:
+        List of (index, low_value) tuples for pivot lows
+    """
+    if len(df) < 2 * k + 1:
+        return []
+
+    lows = df['Low'].values
+    start_idx = max(0, len(df) - lookback)
+    pivots = []
+
+    for i in range(start_idx + k, len(df) - k):
+        window_start = i - k
+        window_end = i + k + 1
+        window = lows[window_start:window_end]
+        if lows[i] == window.min():
+            pivots.append((i, float(lows[i])))
+
+    return pivots
+
+
+def compute_support_level(df: pd.DataFrame, current_close: float, lookback: int = 90, k: int = 2) -> float | None:
+    """
+    Find nearest meaningful support below current price.
+
+    Uses pivot low detection to find swing lows, then returns the highest
+    pivot low below current close (nearest support).
+
+    Args:
+        df: DataFrame with 'Low' column
+        current_close: Current closing price
+        lookback: Days to look back for pivots
+        k: Pivot window size
+
+    Returns:
+        Support level or None if no support found
+    """
+    pivots = compute_pivot_lows(df, lookback, k)
+
+    # Filter to pivots below current price
+    supports_below = [p[1] for p in pivots if p[1] < current_close]
+
+    if supports_below:
+        # Return highest pivot low below price (nearest support)
+        return max(supports_below)
+
+    # Fallback: rolling min low over lookback period
+    if len(df) >= lookback:
+        rolling_min = df['Low'].iloc[-lookback:].min()
+        if rolling_min < current_close:
+            return float(rolling_min)
+
+    return None
+
+
+def compute_donchian_breakout(df: pd.DataFrame, window: int = 20) -> dict:
+    """
+    Compute Donchian channel breakout metrics.
+
+    Args:
+        df: DataFrame with 'High', 'Close' columns
+        window: Donchian channel period
+
+    Returns:
+        Dict with donchian_high_20, breakout_today, days_since_breakout_20
+    """
+    result = {
+        "donchian_high_20": None,
+        "breakout_today": False,
+        "days_since_breakout_20": None,
+    }
+
+    if len(df) < window + 1:
+        return result
+
+    # Donchian high: max of previous 'window' days' highs (excluding today)
+    # shift(1) excludes current bar
+    donchian_high = df['High'].shift(1).rolling(window).max().iloc[-1]
+    result["donchian_high_20"] = safe_float(donchian_high)
+
+    current_close = df['Close'].iloc[-1]
+    if result["donchian_high_20"] is not None:
+        result["breakout_today"] = current_close > result["donchian_high_20"]
+
+    # Find days since last breakout (within last ~30 days)
+    lookback = min(30, len(df) - window - 1)
+    if lookback > 0:
+        for days_ago in range(lookback):
+            idx = -(days_ago + 1)
+            if idx - 1 < -len(df):
+                break
+            close_then = df['Close'].iloc[idx]
+            # Donchian high as of that day
+            donch_idx = idx - 1
+            if abs(donch_idx) + window > len(df):
+                continue
+            donch_high_then = df['High'].iloc[donch_idx - window + 1:donch_idx + 1].max()
+            if close_then > donch_high_then:
+                result["days_since_breakout_20"] = days_ago
+                break
+
+    return result
+
+
+def compute_tight_range(df: pd.DataFrame, window: int = 10, max_pct: float = 8.0) -> dict:
+    """
+    Compute tight range / compression detection.
+
+    Args:
+        df: DataFrame with 'High', 'Low', 'Close' columns
+        window: Number of days to check
+        max_pct: Maximum range percentage to be considered "tight"
+
+    Returns:
+        Dict with range_pct and tight_range boolean
+    """
+    result = {"range_pct": None, "tight_range": False}
+
+    if len(df) < window:
+        return result
+
+    recent = df.iloc[-window:]
+    high_max = recent['High'].max()
+    low_min = recent['Low'].min()
+    current_close = df['Close'].iloc[-1]
+
+    if current_close > 0:
+        range_pct = (high_max - low_min) / current_close * 100
+        result["range_pct"] = safe_float(range_pct)
+        result["tight_range"] = range_pct <= max_pct
+
+    return result
+
+
+def compute_close_near_high(df: pd.DataFrame, max_pct: float = 2.0) -> dict:
+    """
+    Check if today's close is near today's high (breakout quality signal).
+
+    Args:
+        df: DataFrame with 'High', 'Close' columns
+        max_pct: Maximum percentage from high to be considered "near"
+
+    Returns:
+        Dict with close_to_high_pct and close_near_high boolean
+    """
+    result = {"close_to_high_pct": None, "close_near_high": False}
+
+    if len(df) < 1:
+        return result
+
+    high_today = df['High'].iloc[-1]
+    close_today = df['Close'].iloc[-1]
+
+    if high_today > 0:
+        pct = (high_today - close_today) / high_today * 100
+        result["close_to_high_pct"] = safe_float(pct)
+        result["close_near_high"] = pct <= max_pct
+
+    return result
 
 
 def is_cache_fresh(symbol: str, metadata: dict) -> bool:
@@ -230,8 +401,25 @@ def compute_full_analysis(df: pd.DataFrame) -> dict:
     result["macd_bullish"] = result["macd"] > result["macd_signal"]
 
     # SMAs
+    result["sma20"] = safe_float(df['Close'].rolling(20).mean().iloc[-1]) if len(df) >= 20 else None
     result["sma50"] = safe_float(df['Close'].rolling(50).mean().iloc[-1]) if len(df) >= 50 else None
     result["sma200"] = safe_float(df['Close'].rolling(200).mean().iloc[-1]) if len(df) >= 200 else None
+
+    # Percent from SMAs
+    if result["sma20"] is not None and result["sma20"] > 0:
+        result["pct_from_sma20"] = (result["price"] / result["sma20"] - 1) * 100
+    else:
+        result["pct_from_sma20"] = None
+
+    if result["sma50"] is not None and result["sma50"] > 0:
+        result["pct_from_sma50"] = (result["price"] / result["sma50"] - 1) * 100
+    else:
+        result["pct_from_sma50"] = None
+
+    if result["sma200"] is not None and result["sma200"] > 0:
+        result["pct_from_sma200"] = (result["price"] / result["sma200"] - 1) * 100
+    else:
+        result["pct_from_sma200"] = None
 
     # Trend - use explicit None checks (NaN is truthy!)
     if result["sma50"] is not None and result["sma200"] is not None:
@@ -329,6 +517,43 @@ def compute_full_analysis(df: pd.DataFrame) -> dict:
     else:
         result["bb_signal"] = "Mid-band"
 
+    # =========================================================================
+    # CONFLUENCE FEATURES (for setup scoring)
+    # =========================================================================
+
+    # Support level via pivot-low detection
+    rules = SCAN_SETUP_RULES
+    support_level = compute_support_level(
+        df, result["price"],
+        lookback=rules["pivot_lookback"],
+        k=rules["pivot_window"]
+    )
+    result["support_level"] = support_level
+    if support_level is not None and support_level > 0:
+        result["pct_above_support"] = (result["price"] / support_level - 1) * 100
+    else:
+        result["pct_above_support"] = None
+
+    # Donchian breakout metrics
+    donchian = compute_donchian_breakout(df, window=rules["breakout_window"])
+    result["donchian_high_20"] = donchian["donchian_high_20"]
+    result["breakout_today"] = donchian["breakout_today"]
+    result["days_since_breakout_20"] = donchian["days_since_breakout_20"]
+
+    # Tight range / compression
+    tight = compute_tight_range(
+        df,
+        window=rules["tight_range_window"],
+        max_pct=rules["tight_range_max_pct"]
+    )
+    result["range_pct"] = tight["range_pct"]
+    result["tight_range"] = tight["tight_range"]
+
+    # Close near high (breakout quality)
+    near_high = compute_close_near_high(df, max_pct=rules["close_near_high_max_pct"])
+    result["close_to_high_pct"] = near_high["close_to_high_pct"]
+    result["close_near_high"] = near_high["close_near_high"]
+
     # Overall technical score (simplified)
     score = 5.0  # Base score
 
@@ -379,33 +604,60 @@ def compute_full_analysis(df: pd.DataFrame) -> dict:
     return result
 
 
-def analyze_batch(symbols: list[str]) -> list[dict]:
+def normalize_symbol_for_market(symbol: str, us_market: bool = False) -> str:
+    """Normalize symbol for the appropriate market.
+
+    Args:
+        symbol: Raw symbol
+        us_market: If True, don't add .NS suffix (US stocks)
+
+    Returns:
+        Normalized symbol with appropriate suffix
+    """
+    s = symbol.upper().strip()
+    if us_market:
+        # US market: remove any Indian suffixes, return as-is
+        for suffix in [".NS", ".BO", ".BSE", ".NSE"]:
+            if s.endswith(suffix):
+                s = s[:-len(suffix)]
+        return s
+    else:
+        # Indian market: use existing normalize_symbol logic
+        return normalize_symbol(s)
+
+
+def analyze_batch(symbols: list[str], us_market: bool = False, verbose: bool = True) -> list[dict]:
     """Analyze stocks in batches with rate limiting.
 
     Args:
         symbols: List of stock symbols (with or without .NS/.BO suffix)
+        us_market: If True, treat as US stocks (no .NS suffix)
+        verbose: If True, print progress to stdout
 
     Returns:
         List of analysis results
     """
     if not HAS_YFINANCE:
-        print("Error: yfinance not installed")
+        if verbose:
+            print("Error: yfinance not installed")
         return []
 
     metadata = load_json(CACHE_METADATA_PATH) or {}
     results = []
 
-    # Normalize all symbols upfront (preserves .BO if provided)
-    normalized = [normalize_symbol(s) for s in symbols]
+    # Normalize all symbols upfront
+    normalized = [normalize_symbol_for_market(s, us_market) for s in symbols]
     total = len(normalized)
-    print(f"\nAnalyzing {total} stocks...\n")
+    if verbose:
+        print(f"\nAnalyzing {total} stocks...\n")
 
     for i in range(0, len(normalized), BATCH_SIZE):
         batch = normalized[i:i + BATCH_SIZE]
         batch_num = i // BATCH_SIZE + 1
         total_batches = (len(normalized) + BATCH_SIZE - 1) // BATCH_SIZE
 
-        print(f"Batch {batch_num}/{total_batches}: {', '.join(display_symbol(s) for s in batch)}")
+        if verbose:
+            print(f"Batch {batch_num}/{total_batches}: {', '.join(display_symbol(s) for s in batch)}")
 
         for yf_symbol in batch:
             disp_symbol = display_symbol(yf_symbol)
@@ -418,7 +670,8 @@ def analyze_batch(symbols: list[str]) -> list[dict]:
                 ohlcv = fetch_with_backoff(yf_symbol, metadata)
 
             if ohlcv is None or ohlcv.empty:
-                print(f"  {disp_symbol}: ERROR - Could not fetch data")
+                if verbose:
+                    print(f"  {disp_symbol}: ERROR - Could not fetch data")
                 continue
 
             # Run full analysis
@@ -428,81 +681,87 @@ def analyze_batch(symbols: list[str]) -> list[dict]:
 
             # Save to scan_technical folder (separate from portfolio analysis)
             SCAN_TECHNICAL_DIR.mkdir(parents=True, exist_ok=True)
-            save_json(SCAN_TECHNICAL_DIR / f"{yf_symbol}.json", analysis)
+            save_json(SCAN_TECHNICAL_DIR / f"{disp_symbol}.json", analysis)
 
             results.append(analysis)
 
             # Print summary
-            rec = analysis["recommendation"]
-            score = analysis["technical_score"]
-            rsi = analysis["rsi"]
-            trend = analysis["trend"]
-            macd = "↑" if analysis["macd_bullish"] else "↓"
-
-            print(f"  {disp_symbol}: Score {score:.1f} | {rec} | RSI {rsi:.0f} | MACD {macd} | {trend}")
+            if verbose:
+                rec = analysis["recommendation"]
+                score = analysis["technical_score"]
+                rsi = analysis["rsi"]
+                trend = analysis["trend"]
+                macd = "↑" if analysis["macd_bullish"] else "↓"
+                print(f"  {disp_symbol}: Score {score:.1f} | {rec} | RSI {rsi:.0f} | MACD {macd} | {trend}")
 
         # Delay between batches
         if i + BATCH_SIZE < len(normalized):
-            print(f"\n  Waiting {DELAY_BETWEEN_BATCH}s before next batch...\n")
+            if verbose:
+                print(f"\n  Waiting {DELAY_BETWEEN_BATCH}s before next batch...\n")
             time.sleep(DELAY_BETWEEN_BATCH)
 
-    # Summary table
-    print(f"\n{'='*80}")
-    print(f"{'Symbol':<12} {'Score':<7} {'Rec':<12} {'RSI':<8} {'MACD':<8} {'Trend':<12} {'52W':<10}")
-    print(f"{'='*80}")
+    # Summary table (only in verbose mode)
+    if verbose:
+        print(f"\n{'='*80}")
+        print(f"{'Symbol':<12} {'Score':<7} {'Rec':<12} {'RSI':<8} {'MACD':<8} {'Trend':<12} {'52W':<10}")
+        print(f"{'='*80}")
 
-    for r in sorted(results, key=lambda x: x["technical_score"], reverse=True):
-        symbol = r["symbol"]
-        score = r["technical_score"]
-        rec = r["recommendation"]
-        rsi = r["rsi"]
-        macd = "Bullish" if r["macd_bullish"] else "Bearish"
-        trend = r["trend"]
-        pct_high = f"{r['pct_from_high']:.1f}% off"
+        for r in sorted(results, key=lambda x: x["technical_score"], reverse=True):
+            symbol = r["symbol"]
+            score = r["technical_score"]
+            rec = r["recommendation"]
+            rsi = r["rsi"]
+            macd = "Bullish" if r["macd_bullish"] else "Bearish"
+            trend = r["trend"]
+            pct_high = f"{r['pct_from_high']:.1f}% off"
 
-        print(f"{symbol:<12} {score:<7.1f} {rec:<12} {rsi:<8.1f} {macd:<8} {trend:<12} {pct_high:<10}")
+            print(f"{symbol:<12} {score:<7.1f} {rec:<12} {rsi:<8.1f} {macd:<8} {trend:<12} {pct_high:<10}")
 
-    print(f"{'='*80}\n")
+        print(f"{'='*80}\n")
 
-    # Group by recommendation
-    strong_buys = [r for r in results if r["recommendation"] == "STRONG BUY"]
-    buys = [r for r in results if r["recommendation"] == "BUY"]
-    holds = [r for r in results if r["recommendation"] == "HOLD"]
+        # Group by recommendation
+        strong_buys = [r for r in results if r["recommendation"] == "STRONG BUY"]
+        buys = [r for r in results if r["recommendation"] == "BUY"]
+        holds = [r for r in results if r["recommendation"] == "HOLD"]
 
-    if strong_buys:
-        print(f"STRONG BUY: {', '.join(r['symbol'] for r in strong_buys)}")
-    if buys:
-        print(f"BUY: {', '.join(r['symbol'] for r in buys)}")
-    if holds:
-        print(f"HOLD: {', '.join(r['symbol'] for r in holds)}")
+        if strong_buys:
+            print(f"STRONG BUY: {', '.join(r['symbol'] for r in strong_buys)}")
+        if buys:
+            print(f"BUY: {', '.join(r['symbol'] for r in buys)}")
+        if holds:
+            print(f"HOLD: {', '.join(r['symbol'] for r in holds)}")
 
     return results
 
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: verify_scan.py SYMBOL1 SYMBOL2 SYMBOL3 ...")
+        print("Usage: verify_scan.py [--us] SYMBOL1 SYMBOL2 SYMBOL3 ...")
         print("")
         print("Runs FULL technical analysis on each stock:")
         print("  - RSI, MACD, SMA50/200, Bollinger, ADX, Volume")
         print("  - Computes technical score (1-10)")
         print("  - Gives recommendation (STRONG BUY/BUY/HOLD/SELL)")
         print("")
+        print("Options:")
+        print("  --us    Treat symbols as US stocks (no .NS suffix)")
+        print("")
         print("Examples:")
-        print("  verify_scan.py VPRPL IREDA RVNL")
-        print("  verify_scan.py RELIANCE TCS INFY HDFCBANK")
-        print("  verify_scan.py RELIANCE.BO  # BSE stock")
+        print("  verify_scan.py VPRPL IREDA RVNL           # Indian stocks")
+        print("  verify_scan.py --us AAPL MSFT GOOGL       # US stocks")
+        print("  verify_scan.py RELIANCE.BO                # BSE stock")
         sys.exit(1)
 
-    # Parse symbols - pass as-is, analyze_batch handles normalization
-    symbols = sys.argv[1:]
+    # Parse arguments
+    us_market = "--us" in sys.argv
+    symbols = [s for s in sys.argv[1:] if s != "--us"]
 
     if not symbols:
         print("Error: No symbols provided")
         sys.exit(1)
 
     # Run analysis
-    results = analyze_batch(symbols)
+    results = analyze_batch(symbols, us_market=us_market)
 
     # Return strong buys for easy copy
     strong_buys = [r["symbol"] for r in results if r["recommendation"] in ("STRONG BUY", "BUY")]

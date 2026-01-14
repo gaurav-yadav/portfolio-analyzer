@@ -37,3 +37,8 @@ Thumbs.db
 
 # Disabled agents
 .claude/agents/_*.disabled
+
+# Allow agent definitions (override global .claude/ ignore)
+!.claude/
+!.claude/agents/
+!.claude/agents/*.md

@@ -317,6 +317,35 @@ Agent behavior is defined in `.claude/agents/*.md`. Each file specifies:
 - Data sources
 - Scoring logic
 
+### Available Agents
+
+The system uses specialized AI agents for different workflows:
+
+**Portfolio Analysis Agents:**
+- `csv-parser` — Parse Zerodha/Groww CSV exports into canonical holdings JSON
+- `portfolio-importer` — Universal importer for any holdings CSV format (India/US)
+- `data-fetcher` — Fetch OHLCV data from Yahoo Finance for Indian stocks
+- `technical-analyst` — Compute technical indicators (RSI, MACD, SMA, Bollinger, ADX, Volume)
+- `fundamentals-researcher` — Research fundamental data (P/E, revenue growth, quarterly results) via web search
+- `news-sentiment` — Analyze recent news and market sentiment via web search
+- `legal-corporate` — Search for legal issues, red flags, and corporate actions via web search
+- `scorer` — Aggregate all analysis scores and generate final stock recommendations
+- `portfolio-watcher` — Monitor holdings + watchlist using local OHLCV/technicals and surface signals with context
+
+**Stock Scanner Agents:**
+- `scanner` — Smart scanner for technical setups: web-search discovery + OHLCV confluence ranking (2w breakout + 2m pullback + reversal)
+- `scan-validator` — Enrich scan picks with OHLCV confluence (pullback/breakout/reversal) and annotate + rank the scan JSON
+- `breakout-crosscheck` — Manual cross-check to shortlist 1-2 week breakout setups from the latest enriched scan (no web search)
+- `reversal-crosscheck` — Manual cross-check to shortlist support-reversal setups from the latest enriched scan (no web search)
+- `fundamental-scanner` — Small/Mid cap growth + quality discovery (fundamental-first), produces candidates scan file treating filters as contextual signals
+
+**IPO Agents:**
+- `ipo-scanner` — Find upcoming/open Indian IPOs via web search and maintain a single versioned IPO database JSON file
+- `ipo-researcher` — Deep-dive research for a single IPO via web search and update the single versioned IPO database JSON file
+- `ipo-scorer` — Score IPOs from the single IPO database JSON using a simple rubric and write scores back (no Python/scripts)
+
+See [AGENTS.md](AGENTS.md) for detailed agent documentation and [CLAUDE.md](CLAUDE.md) for workflow orchestration.
+
 ---
 
 ## Security

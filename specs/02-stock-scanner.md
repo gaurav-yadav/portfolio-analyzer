@@ -2,12 +2,15 @@
 
 ## Overview
 
-Discover **new investment opportunities** by searching existing screener sites (Chartink, Trendlyne, Groww, etc.) via Claude agents. No bulk Yahoo Finance fetching - leverage existing screeners.
+Discover **new investment opportunities** by:
+1) Web-searching existing screeners (Chartink, Trendlyne, etc.) for a candidate pool
+2) Ranking candidates using **OHLCV-derived confluence** (so decisions are based on real price/volume)
 
 **Key Design:**
 - **Claude agents with WebSearch** do the heavy lifting
 - **Run ALL 5 scans in parallel** (not individual selection)
 - **Track results over time** to see if picks worked
+- **Enrich + rank picks with OHLCV** before adding to watchlist (Yahoo Finance via existing scripts)
 
 ---
 
@@ -34,7 +37,165 @@ Claude: Scan complete! Found:
   - 52-Week High: 15 stocks (...)
 
 Saved to data/scans/scan_20260101_143000.json
+
+Claude: Validating scan picks with OHLCV...
+  uv run python scripts/validate_scan.py latest --enrich-setups --rank
+  - Adds pass/fail validation per match
+  - Writes per-symbol technical checks to data/scan_technical/
+  - Adds confluence setup scores + ranked shortlists
 ```
+
+---
+
+## Validation (OHLCV-based)
+
+Web search results are noisy; validate signals against real OHLCV before acting.
+
+**Script:** `scripts/validate_scan.py`
+
+```bash
+uv run python scripts/validate_scan.py latest --enrich-setups --rank
+```
+
+Adds to the scan JSON:
+- Per-match `validation` object (pass/reason + key metrics)
+- Top-level `validation` summary + `results_by_symbol`
+
+---
+
+## Smart Enrichment (Confluence Setups)
+
+### Goals (KISS)
+
+- Use web search only to build the candidate universe.
+- Use OHLCV (cached) to decide what’s actually tradable.
+- Rank into two actionable horizons:
+  - **`2w_breakout`**: hold ~1–2 weeks
+  - **`2m_pullback`**: hold ~1–2 months
+- Keep **`support_reversal`** as a manual cross-check bucket (higher risk).
+
+### Required OHLCV Features
+
+Computed from 1y daily OHLCV:
+- `sma20`, `sma50`, `sma200`
+- `rsi14`
+- `volume_ratio` (today vs 20D avg)
+- `high_52w`, `low_52w`, `% from high/low`
+- `donchian_high_20` (highest high of last 20 trading days, excluding today)
+- `days_since_breakout_20` (if close breaks above `donchian_high_20`)
+- `support_level` (nearest meaningful swing low over last ~3–6 months) + `% distance`
+- Optional (nice-to-have): RSI divergence vs recent swing low, “tight range” compression score
+
+### Setup Definitions (Rules of Thumb)
+
+All setup blocks share this shape:
+```json
+{
+  "pass": true,
+  "score": 82,
+  "why": ["trend_ok", "near_support", "rsi_reset", "volume_on_bounce"],
+  "metrics": {"rsi": 47.2, "volume_ratio": 1.4, "pct_from_sma20": 1.8}
+}
+```
+
+#### 1) `2m_pullback` (Primary; trend-following)
+
+Intent: buy pullbacks **within uptrends** (not mean reversion).
+
+Hard gates (fail fast):
+- Uptrend bias: `close > sma200` AND (`sma50 >= sma200` OR `close > sma50`)
+- Not a chase: `close` not too extended above `sma20` (overextension filter)
+
+Score boosters:
+- RSI “reset” zone (typically ~40–55) turning up
+- Close near `sma20/sma50` or near `support_level`
+- Volume expansion on bounce day(s)
+
+#### 2) `2w_breakout` (Secondary; continuation)
+
+Intent: trade fresh breakouts with confirmation, avoid false breaks.
+
+Hard gates:
+- Trend bias: `close > sma50` AND `close > sma200` (or at least `close > sma200`)
+- Breakout recency: breakout within last ~3 trading days
+
+Score boosters:
+- Relative volume: `volume_ratio >= 1.5`
+- Close near day high / above breakout level (less “wicky”)
+- Prior tight range (compression) before breakout (optional)
+
+#### 3) `support_reversal` (Manual cross-check; higher risk)
+
+Intent: potential turn at major support.
+
+Hard gates:
+- Close near `support_level` (within a small % band)
+- Bounce confirmation: positive day + volume expansion
+
+Score boosters:
+- Bullish RSI divergence near the low (optional)
+- “Double bottom” style retest within a tolerance band (optional)
+- Reclaim of `sma20` or `sma50` after the bounce
+
+### Ranking Output (in scan JSON)
+
+When `--rank` is enabled, write shortlists into:
+- `scan.validation.rankings.2w_breakout`
+- `scan.validation.rankings.2m_pullback`
+- `scan.validation.rankings.support_reversal`
+
+Each shortlist entry should include `symbol`, `score`, and a one-line `why`.
+
+### CLI Contract (what to implement)
+
+Extend `scripts/validate_scan.py`:
+- `--enrich-setups`: compute setup blocks per symbol and store into the scan JSON
+- `--rank`: write ranked shortlists into `validation.rankings.*`
+
+No new scripts required; keep it in `validate_scan.py`.
+
+### Schema Additions (scan JSON)
+
+When `--enrich-setups` is enabled, write:
+- `scan.validation.engine_version = 2`
+- `scan.validation.setups_by_symbol`:
+  - Key: `symbol_clean` (no `.NS/.BO`)
+  - Value: setup blocks (plus any shared computed levels)
+- `scan.validation.rankings` (only when `--rank` is enabled)
+
+Example (trimmed):
+```json
+{
+  "validation": {
+    "engine": "scripts/validate_scan.py",
+    "engine_version": 2,
+    "results_by_symbol": {"DCBBANK": {"yf_symbol": "DCBBANK.NS", "rsi": 65.1, "...": "..."}},
+    "setups_by_symbol": {
+      "DCBBANK": {
+        "2w_breakout": {"pass": true, "score": 78, "why": ["trend_ok", "recent_breakout", "volume_ok"], "metrics": {}},
+        "2m_pullback": {"pass": false, "score": 32, "why": ["overextended"], "metrics": {}},
+        "support_reversal": {"pass": false, "score": 10, "why": ["not_near_support"], "metrics": {}}
+      }
+    },
+    "rankings": {
+      "2w_breakout": [{"symbol": "DCBBANK", "score": 78, "why": "trend_ok + recent_breakout + volume_ok"}],
+      "2m_pullback": [],
+      "support_reversal": []
+    }
+  }
+}
+```
+
+### Implementation Notes (DRY)
+
+- Prefer computing all extra OHLCV features in one place (either:
+  - extend `scripts/verify_scan.py:compute_full_analysis()`, or
+  - add a small helper in `scripts/validate_scan.py` that works off the cached OHLCV dataframe).
+- Keep setup scoring deterministic and fully explainable via `why[]`.
+
+This uses `scripts/verify_scan.py` under the hood, which:
+- Fetches 1y OHLCV from Yahoo Finance (cached)
+- Computes RSI, MACD (with crossover recency), SMA50/200 (golden cross recency), volume ratio, 52w distance
 
 ---
 
@@ -119,49 +280,13 @@ Track each stock's performance since discovery:
 
 ## Agent Definition
 
-### `.claude/agents/scanner.md`
+See `.claude/agents/scanner.md` for the live agent definition.
 
-```markdown
----
-name: scanner
-description: Run all stock scans using parallel web search
----
-
-Execute ALL 5 stock scans in parallel using web search.
-
-## SCANS TO RUN (ALL IN PARALLEL)
-
-1. **RSI Oversold**: Search for stocks with RSI < 30 or recovering
-   - Queries: "RSI oversold stocks NSE India", "chartink RSI below 30"
-
-2. **MACD Crossover**: Search for bullish MACD crossover
-   - Queries: "MACD bullish crossover NSE", "MACD buy signal India"
-
-3. **Golden Cross**: Search for SMA50 crossing above SMA200
-   - Queries: "Golden Cross stocks NSE", "SMA 50 crossing 200"
-
-4. **Volume Breakout**: Search for unusual volume + price breakout
-   - Queries: "volume breakout NSE today", "unusual volume stocks India"
-
-5. **52-Week High**: Search for stocks at/near 52-week highs
-   - Queries: "52 week high stocks NSE today", "new highs India"
-
-## OUTPUT FORMAT
-
-For each scan, return:
-SYMBOL - note (indicator value if known) - source
-
-Example:
-DCMSRIND - RSI 15.1 - trendlyne
-ATMASTCO - RSI 16.5 - groww
-
-## AFTER SCANS COMPLETE
-
-1. Aggregate all results
-2. Save to data/scans/scan_{YYYYMMDD_HHMMSS}.json
-3. Update watchlist prices if watchlist exists
-4. Report summary to user
-```
+Key requirements:
+- Run **all 5 scans in parallel**
+- Save results to `data/scans/scan_YYYYMMDD_HHMMSS.json`
+- **Always validate** web-search picks with OHLCV before recommending watchlist adds:
+  - Prefer the `scan-validator` agent, or run `uv run python scripts/validate_scan.py latest`
 
 ---
 

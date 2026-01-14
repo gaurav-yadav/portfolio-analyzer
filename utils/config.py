@@ -77,6 +77,49 @@ def get_recommendation(score: float, thresholds: dict = None) -> str:
         return "STRONG SELL"
 
 
+# =============================================================================
+# SCAN SETUP RULES (Confluence scoring for scanner)
+# =============================================================================
+SCAN_SETUP_RULES = {
+    # Lookback windows (trading days)
+    "pivot_lookback": 90,           # Days to search for swing lows
+    "pivot_window": 2,              # k=2 means 5-bar pivot (i-2 to i+2)
+    "breakout_window": 20,          # Donchian channel period
+    "tight_range_window": 10,       # Days for compression detection
+
+    # Thresholds
+    "near_support_pct": 3.0,        # Within 3% of support = "near support"
+    "near_sma_pct": 3.0,            # Within 3% of SMA = "near SMA"
+    "max_extension_above_sma20_pct": 8.0,  # Reject if >8% above SMA20
+    "max_days_since_breakout": 5,   # Breakout must be within 5 days
+
+    # RSI thresholds
+    "rsi_ideal_min": 35,            # Ideal pullback zone lower
+    "rsi_ideal_max": 55,            # Ideal pullback zone upper
+    "rsi_overbought_max": 70,       # Above this = overbought penalty
+
+    # Volume thresholds
+    "min_volume_ratio_bounce": 1.2,      # For volume_on_bounce
+    "breakout_min_volume_ratio": 1.5,    # For breakout confirmation
+    "breakout_strong_volume_ratio": 2.0, # Strong volume bonus
+    "min_bounce_volume_ratio": 1.3,      # For reversal bounce
+
+    # Price change thresholds
+    "min_bounce_change_pct": 1.0,   # Minimum 1% up for bounce confirmation
+
+    # Tight range / compression
+    "tight_range_max_pct": 8.0,     # Range < 8% of close = tight
+
+    # Close near high (for breakout quality)
+    "close_near_high_max_pct": 2.0, # Within 2% of day high
+
+    # Pass thresholds
+    "2m_pullback_min_score": 60,
+    "2w_breakout_min_score": 65,
+    "support_reversal_min_score": 60,
+}
+
+
 def get_portfolio_health_label(avg_score: float) -> str:
     """Get overall portfolio health assessment."""
     if avg_score >= 7.5:
@@ -89,3 +132,17 @@ def get_portfolio_health_label(avg_score: float) -> str:
         return "Needs Attention"
     else:
         return "At Risk"
+
+
+# =============================================================================
+# PORTFOLIO WATCHER (Signal thresholds, not hard gates)
+# =============================================================================
+WATCHER_THRESHOLDS = {
+    # Volatility (ATR as % of price)
+    "atr_pct_high": 4.0,
+    # Drawdown from recent highs (20 trading days)
+    "drawdown_20d_pct": 10.0,
+    # Momentum extremes
+    "rsi_oversold": 30.0,
+    "rsi_overbought": 70.0,
+}
