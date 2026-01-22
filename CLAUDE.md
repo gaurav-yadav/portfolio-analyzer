@@ -75,7 +75,7 @@ Trigger: "analyze my portfolio from …", "run full portfolio analysis"
     - Agents branch based on `missing`/`stale` status per symbol
   - Web research agents as-needed (missing/stale fundamentals/news/legal)
   - `uv run python scripts/score_all.py --profile portfolio_long_term`
-  - `uv run python scripts/compile_report.py`
+  - `uv run python scripts/compile_report.py --portfolio-id <portfolio_id>` → `data/portfolios/<portfolio_id>/reports/analysis_*.csv`
   - `uv run python scripts/portfolio_snapshot.py --portfolio-id <portfolio_id>`
   - Write markdown report to `data/portfolios/<portfolio_id>/report.md` (agent-written)
   - Archive + list reports: `uv run python scripts/portfolio_report_archive.py --portfolio-id <portfolio_id> --json`

@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """
-Portfolio Report Compiler - Compiles all stock scores into a comprehensive report.
+Portfolio Report Compiler - Compiles stock scores into a comprehensive report.
 
 Usage:
+    # Global view (all scores)
     uv run python scripts/compile_report.py
 
+    # Portfolio-scoped view (filtered to holdings)
+    uv run python scripts/compile_report.py --portfolio-id gaurav_us
+
 Output:
-    Creates output/analysis_YYYYMMDD_HHMMSS.csv with:
-    - Individual stock analysis rows
-    - Portfolio health summary footer
+    - Global: output/analysis_YYYYMMDD_HHMMSS.csv
+    - Portfolio: data/portfolios/<portfolio_id>/reports/analysis_YYYYMMDD_HHMMSS.csv
 """
 
+import argparse
 import csv
 import json
 import sys
@@ -21,6 +25,68 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.helpers import load_json
 from utils.config import THRESHOLDS, get_recommendation, get_portfolio_health_label
+
+
+BASE_PATH = Path(__file__).parent.parent
+
+
+def load_holdings_symbols(portfolio_id: str | None) -> set[str] | None:
+    """Load holdings and return set of symbols to filter by. Returns None if no filter."""
+    if not portfolio_id:
+        return None
+
+    # Try portfolio-specific holdings first
+    holdings_path = BASE_PATH / "data" / "portfolios" / portfolio_id / "holdings.json"
+    if not holdings_path.exists():
+        # Fallback to global holdings.json
+        holdings_path = BASE_PATH / "data" / "holdings.json"
+
+    if not holdings_path.exists():
+        return None
+
+    data = load_json(holdings_path)
+    if not data:
+        return None
+
+    # Handle both formats: {"holdings": [...]} and [...]
+    holdings = data.get("holdings", data) if isinstance(data, dict) else data
+    if not isinstance(holdings, list):
+        return None
+
+    symbols = set()
+    for h in holdings:
+        if isinstance(h, dict):
+            # Try various symbol fields
+            sym = h.get("symbol") or h.get("symbol_yf") or h.get("ticker") or ""
+            sym = str(sym).strip().upper()
+            if sym:
+                # Also add without suffix for matching
+                symbols.add(sym)
+                if "." in sym:
+                    symbols.add(sym.split(".")[0])
+    return symbols if symbols else None
+
+
+def symbol_matches(score: dict, allowed_symbols: set[str] | None) -> bool:
+    """Check if a score entry matches the allowed symbols."""
+    if allowed_symbols is None:
+        return True
+
+    # Try various symbol fields
+    sym_yf = str(score.get("symbol_yf") or "").strip().upper()
+    sym = str(score.get("symbol") or "").strip().upper()
+
+    # Direct match
+    if sym_yf in allowed_symbols or sym in allowed_symbols:
+        return True
+
+    # Match without suffix (e.g., "RELIANCE.NS" matches "RELIANCE")
+    if sym_yf and "." in sym_yf:
+        base = sym_yf.split(".")[0]
+        if base in allowed_symbols:
+            return True
+
+    return False
 
 
 def get_overall_recommendation(distribution: dict, avg_score: float) -> str:
@@ -50,19 +116,31 @@ def get_overall_recommendation(distribution: dict, avg_score: float) -> str:
         return "Portfolio is balanced. Regular monitoring recommended."
 
 
-def compile_report() -> str:
+def compile_report(portfolio_id: str | None = None) -> str:
     """
-    Compile all stock scores into a comprehensive CSV report.
+    Compile stock scores into a comprehensive CSV report.
+
+    Args:
+        portfolio_id: If provided, filter scores to only holdings in this portfolio.
 
     Returns:
         Path to the generated report file
     """
-    base_path = Path(__file__).parent.parent
-    scores_dir = base_path / "data" / "scores"
-    output_dir = base_path / "output"
+    scores_dir = BASE_PATH / "data" / "scores"
+
+    # Determine output directory
+    if portfolio_id:
+        output_dir = BASE_PATH / "data" / "portfolios" / portfolio_id / "reports"
+    else:
+        output_dir = BASE_PATH / "output"
 
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load holdings filter if portfolio_id provided
+    allowed_symbols = load_holdings_symbols(portfolio_id)
+    if portfolio_id and allowed_symbols is None:
+        print(f"Warning: No holdings found for portfolio '{portfolio_id}', including all scores", file=sys.stderr)
 
     # Find all score files
     score_files = list(scores_dir.glob("*.json"))
@@ -71,15 +149,18 @@ def compile_report() -> str:
         print("No score files found in data/scores/", file=sys.stderr)
         sys.exit(1)
 
-    # Load all scores
+    # Load and filter scores
     all_scores = []
     for score_file in score_files:
         data = load_json(score_file)
-        if data:
+        if data and symbol_matches(data, allowed_symbols):
             all_scores.append(data)
 
     if not all_scores:
-        print("No valid score data found", file=sys.stderr)
+        if portfolio_id:
+            print(f"No score data found matching portfolio '{portfolio_id}' holdings", file=sys.stderr)
+        else:
+            print("No valid score data found", file=sys.stderr)
         sys.exit(1)
 
     # Sort by overall score descending
@@ -270,22 +351,29 @@ def print_summary(output_file: str, all_scores: list):
 
 
 def main():
-    base_path = Path(__file__).parent.parent
-    scores_dir = base_path / "data" / "scores"
+    parser = argparse.ArgumentParser(description="Compile stock scores into a CSV report.")
+    parser.add_argument("--portfolio-id", default="", help="Portfolio ID to filter scores (default: all scores)")
+    args = parser.parse_args()
+
+    portfolio_id = args.portfolio_id.strip() or None
+    scores_dir = BASE_PATH / "data" / "scores"
+
+    # Load holdings filter if portfolio_id provided
+    allowed_symbols = load_holdings_symbols(portfolio_id)
 
     # Load scores for summary display
     score_files = list(scores_dir.glob("*.json"))
     all_scores = []
     for score_file in score_files:
         data = load_json(score_file)
-        if data:
+        if data and symbol_matches(data, allowed_symbols):
             all_scores.append(data)
 
     # Sort by overall score descending
     all_scores.sort(key=lambda x: x.get("overall_score", 0), reverse=True)
 
     try:
-        output_file = compile_report()
+        output_file = compile_report(portfolio_id)
         print_summary(output_file, all_scores)
     except Exception as e:
         print(f"Error compiling report: {e}", file=sys.stderr)

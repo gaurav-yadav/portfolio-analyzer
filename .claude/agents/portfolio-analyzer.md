@@ -86,12 +86,13 @@ Score (use a profile):
 uv run python scripts/score_all.py --profile <portfolio_long_term|default>
 ```
 
-Compile report:
+Compile CSV report (filtered to portfolio holdings):
 ```bash
-uv run python scripts/compile_report.py
+uv run python scripts/compile_report.py --portfolio-id <portfolio_id>
 ```
+This writes to `data/portfolios/<portfolio_id>/reports/analysis_YYYYMMDD_HHMMSS.csv`.
 
-Write portfolio snapshot:
+Write portfolio snapshot (filtered to portfolio holdings):
 ```bash
 uv run python scripts/portfolio_snapshot.py --portfolio-id <portfolio_id>
 ```

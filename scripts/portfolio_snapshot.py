@@ -4,6 +4,7 @@ Portfolio Snapshot - persist a portfolio run as a JSON snapshot (deterministic).
 
 This script is a lightweight "state recorder" for job #2 (portfolios):
   - Reads current `data/scores/*.json` outputs
+  - Filters scores to only holdings in the portfolio
   - Computes portfolio-level summary stats
   - Writes a timestamped (or run-id) snapshot under:
       data/portfolios/<portfolio_id>/snapshots/<run_id>.json
@@ -27,10 +28,62 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.helpers import save_json  # noqa: E402
+from utils.helpers import save_json, load_json  # noqa: E402
 
 
 BASE_PATH = Path(__file__).parent.parent
+
+
+def load_holdings_symbols(portfolio_id: str) -> set[str] | None:
+    """Load holdings and return set of symbols to filter by. Returns None if no filter."""
+    # Try portfolio-specific holdings first
+    holdings_path = BASE_PATH / "data" / "portfolios" / portfolio_id / "holdings.json"
+    if not holdings_path.exists():
+        # Fallback to global holdings.json
+        holdings_path = BASE_PATH / "data" / "holdings.json"
+
+    if not holdings_path.exists():
+        return None
+
+    data = load_json(holdings_path)
+    if not data:
+        return None
+
+    # Handle both formats: {"holdings": [...]} and [...]
+    holdings = data.get("holdings", data) if isinstance(data, dict) else data
+    if not isinstance(holdings, list):
+        return None
+
+    symbols = set()
+    for h in holdings:
+        if isinstance(h, dict):
+            # Try various symbol fields
+            sym = h.get("symbol") or h.get("symbol_yf") or h.get("ticker") or ""
+            sym = str(sym).strip().upper()
+            if sym:
+                # Also add without suffix for matching
+                symbols.add(sym)
+                if "." in sym:
+                    symbols.add(sym.split(".")[0])
+    return symbols if symbols else None
+
+
+def symbol_matches(symbol_yf: str, allowed_symbols: set[str] | None) -> bool:
+    """Check if a symbol matches the allowed symbols."""
+    if allowed_symbols is None:
+        return True
+
+    sym = symbol_yf.strip().upper()
+    if sym in allowed_symbols:
+        return True
+
+    # Match without suffix (e.g., "RELIANCE.NS" matches "RELIANCE")
+    if "." in sym:
+        base = sym.split(".")[0]
+        if base in allowed_symbols:
+            return True
+
+    return False
 
 
 def now_iso() -> str:
@@ -88,7 +141,7 @@ class ScoreRow:
         return self.quantity * self.current_price
 
 
-def load_score_files(scores_dir: Path) -> list[dict[str, Any]]:
+def load_score_files(scores_dir: Path, allowed_symbols: set[str] | None = None) -> list[dict[str, Any]]:
     if not scores_dir.exists():
         return []
     files = sorted(scores_dir.glob("*.json"))
@@ -99,7 +152,10 @@ def load_score_files(scores_dir: Path) -> list[dict[str, Any]]:
         except Exception:
             continue
         if isinstance(obj, dict):
-            rows.append(obj)
+            # Filter by holdings if provided
+            sym_yf = str(obj.get("symbol_yf") or obj.get("symbol") or "")
+            if symbol_matches(sym_yf, allowed_symbols):
+                rows.append(obj)
     return rows
 
 
@@ -295,8 +351,13 @@ def main() -> None:
     as_of = args.as_of or now_iso()
     run_id = args.run_id or default_run_id(as_of)
 
+    # Load holdings filter
+    allowed_symbols = load_holdings_symbols(portfolio_id)
+    if allowed_symbols is None:
+        print(f"Warning: No holdings found for portfolio '{portfolio_id}', including all scores", file=sys.stderr)
+
     scores_dir = BASE_PATH / args.scores_dir
-    raw_scores = load_score_files(scores_dir)
+    raw_scores = load_score_files(scores_dir, allowed_symbols)
     rows: list[ScoreRow] = []
     for raw in raw_scores:
         r = normalize_score_row(raw)
@@ -304,7 +365,10 @@ def main() -> None:
             rows.append(r)
 
     if not rows:
-        print(f"Error: no usable score files found in {scores_dir}", file=sys.stderr)
+        if allowed_symbols:
+            print(f"Error: no score files matching portfolio '{portfolio_id}' holdings found in {scores_dir}", file=sys.stderr)
+        else:
+            print(f"Error: no usable score files found in {scores_dir}", file=sys.stderr)
         raise SystemExit(1)
 
     snapshot_dir = BASE_PATH / "data" / "portfolios" / portfolio_id / "snapshots"
