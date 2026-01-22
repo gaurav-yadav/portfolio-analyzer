@@ -21,7 +21,18 @@ You run a full portfolio analysis flow while keeping scripts deterministic and u
 
 ## WORKFLOW (BRANCHING, AGENT-HEAVY)
 
-### 0) Ensure holdings exist (import)
+### 0a) Ensure portfolio_id is set
+
+If `portfolio_id` is not provided:
+1. Check if `data/holdings.json` exists and read `holdings[0].portfolio_id`
+2. If still missing, ask user: "What portfolio_id should I use? (e.g., gaurav-us-kuvera)"
+
+Ensure the portfolio directory exists:
+```bash
+mkdir -p data/portfolios/<portfolio_id>
+```
+
+### 0b) Ensure holdings exist (import)
 
 Prefer deterministic import when possible:
 - Clean CSV/TSV → run importer:
@@ -85,7 +96,48 @@ Write portfolio snapshot:
 uv run python scripts/portfolio_snapshot.py --portfolio-id <portfolio_id>
 ```
 
-### 4) Write decisions log (AGENT-WRITTEN)
+### 4) Write narrative report (AGENT-WRITTEN)
+
+Write a markdown report to `data/portfolios/<portfolio_id>/report.md` containing:
+- Actionable Insights (Consider Adding / Consider Trimming / Review)
+- Risk Flags (concentration, sector, valuation, technical)
+- Top/Bottom holdings by score
+- Brief summary of research findings
+
+This report is agent-written narrative; scripts never write this content.
+
+### 5) Archive + list previous reports (DETERMINISTIC)
+
+After writing the report, archive it and list previous reports:
+```bash
+uv run python scripts/portfolio_report_archive.py --portfolio-id <portfolio_id> --json
+```
+
+Parse the JSON output:
+- `archived_path`: where today's report was archived
+- `latest_path`: the live report at `data/portfolios/<portfolio_id>/report.md`
+- `reports`: list of archived reports (newest-first)
+
+If there are 2+ reports in the list (i.e., at least one previous archived report), ask the user:
+```
+Previous reports found:
+  1. <report1_name>
+  2. <report2_name>
+  ...
+Want me to compare today's report to one of these? Reply "compare 1" (most recent previous) or specify a filename.
+```
+
+### 6) Handle comparison requests (AGENT LOGIC)
+
+If user says "compare to last time" or "compare to <N>" or specifies a filename:
+- Read the specified archived report (or most recent if "last time")
+- Read the current `data/portfolios/<portfolio_id>/report.md`
+- Produce a concise comparison:
+  - Changes in "Consider Adding/Trimming/Review" recommendations
+  - Changes in "Risk Flags"
+  - Major concentration/top-holdings shifts (use snapshot delta if available)
+
+### 7) Write decisions log (AGENT-WRITTEN)
 
 Write a decisions log to `data/runs/<run_id>/decisions.md` containing:
 - What commands/agents ran
@@ -96,8 +148,17 @@ This log is for auditability - scripts never write this narrative, only agents d
 
 ## OUTPUT (MINIMAL)
 
-Return ONLY:
+Return:
 ```
-Done: Portfolio analyzed for <portfolio_id>. Report: output/analysis_*.csv. Snapshot: data/portfolios/<portfolio_id>/snapshots/<run_id>.json.
+Done: Portfolio analyzed for <portfolio_id>.
+
+Latest report:   data/portfolios/<portfolio_id>/report.md
+Archived report: data/portfolios/<portfolio_id>/reports/<dd-mm-yyyy>-<slug>.md
+Snapshot:        data/portfolios/<portfolio_id>/snapshots/<run_id>.json
+
+Previous reports:
+  - <report1_name>
+  - <report2_name>
+  ...
 ```
 

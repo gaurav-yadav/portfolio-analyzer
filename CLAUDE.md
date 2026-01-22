@@ -61,7 +61,7 @@ Trigger: “watch my portfolio”, “monitor my holdings”
   - `uv run python scripts/watchlist_snapshot.py <watchlist_id>`
 
 ### Full portfolio analysis (end-to-end)
-Trigger: “analyze my portfolio from …”, “run full portfolio analysis”
+Trigger: "analyze my portfolio from …", "run full portfolio analysis"
 - Agent: `portfolio-analyzer` (`.claude/agents/portfolio-analyzer.md`)
 - Import options:
   - Agent-extracted holdings JSON → normalize: `uv run python scripts/holdings_validate.py ...`
@@ -77,6 +77,9 @@ Trigger: “analyze my portfolio from …”, “run full portfolio analysis”
   - `uv run python scripts/score_all.py --profile portfolio_long_term`
   - `uv run python scripts/compile_report.py`
   - `uv run python scripts/portfolio_snapshot.py --portfolio-id <portfolio_id>`
+  - Write markdown report to `data/portfolios/<portfolio_id>/report.md` (agent-written)
+  - Archive + list reports: `uv run python scripts/portfolio_report_archive.py --portfolio-id <portfolio_id> --json`
+- User can ask: "compare to last time" or "compare to <report>" for delta summary
 
 ### IPO system
 Trigger: “scan upcoming IPOs”, “update IPO list”, “score IPOs”
