@@ -4,9 +4,9 @@ Batch OHLCV Fetcher - Fetches data for all holdings with throttling.
 
 Usage:
     uv run python scripts/fetch_all.py
-    uv run python scripts/fetch_all.py --watchlist
+    uv run python scripts/fetch_all.py --watchlist-id swing
     uv run python scripts/fetch_all.py --symbols RELIANCE.NS TCS.NS
-    uv run python scripts/fetch_all.py --holdings --watchlist --default-suffix .NS
+    uv run python scripts/fetch_all.py --holdings --watchlist-id swing
 
 Reads holdings from data/holdings.json and fetches OHLCV for each unique symbol.
 Includes rate limiting and retry logic to avoid overwhelming Yahoo Finance.
@@ -84,9 +84,9 @@ def main():
         help="Include symbols from data/holdings.json (default if no other input is provided).",
     )
     parser.add_argument(
-        "--watchlist",
-        action="store_true",
-        help="Include symbols from data/watchlist.json (symbols without suffix will use --default-suffix).",
+        "--watchlist-id",
+        default="",
+        help="Include symbols from data/watchlists/<watchlist_id>/watchlist.json.",
     )
     parser.add_argument(
         "--default-suffix",
@@ -102,10 +102,12 @@ def main():
     args = parser.parse_args()
 
     holdings_file = base_path / "data" / "holdings.json"
-    watchlist_file = base_path / "data" / "watchlist.json"
+    watchlist_file = None
+    if args.watchlist_id:
+        watchlist_file = base_path / "data" / "watchlists" / args.watchlist_id / "watchlist.json"
 
     use_holdings = args.holdings
-    use_watchlist = args.watchlist
+    use_watchlist = bool(args.watchlist_id)
     explicit_symbols = [s for s in (args.symbols or []) if s.strip()]
 
     # Backward-compatible default: if user passes no selectors, use holdings.
@@ -115,10 +117,17 @@ def main():
     symbols: list[str] = []
     if use_holdings:
         if not holdings_file.exists():
-            print("Error: data/holdings.json not found. Import/parse holdings first, or pass --symbols/--watchlist.", file=sys.stderr)
+            print("Error: data/holdings.json not found. Import/parse holdings first, or pass --symbols/--watchlist-id.", file=sys.stderr)
             sys.exit(1)
         symbols.extend(load_holdings_symbols(holdings_file))
     if use_watchlist:
+        if not watchlist_file.exists():
+            print(
+                f"Error: watchlist not found at {watchlist_file}. "
+                "Create it via: uv run python scripts/watchlist_events.py add <watchlist_id> <symbol>",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         symbols.extend(load_watchlist_symbols(watchlist_file, args.default_suffix))
     symbols.extend([normalize_yf_symbol(s, default_suffix="") for s in explicit_symbols])
 
@@ -133,7 +142,7 @@ def main():
 
     total = len(unique_symbols)
     if total == 0:
-        print("No symbols to fetch. Provide --holdings, --watchlist, or --symbols.", file=sys.stderr)
+        print("No symbols to fetch. Provide --holdings, --watchlist-id, or --symbols.", file=sys.stderr)
         sys.exit(1)
 
     print(f"Fetching OHLCV for {total} unique symbols (with {DELAY_BETWEEN_REQUESTS}s throttle)...")

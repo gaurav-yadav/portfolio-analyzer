@@ -21,6 +21,9 @@ def main():
     # Directories to clean
     data_dirs = [
         base_path / "data" / "technical",
+        base_path / "data" / "technical_deep",
+        # Legacy path used by older deep technical analysis script
+        base_path / "data" / "technicals",
         base_path / "data" / "fundamentals",
         base_path / "data" / "news",
         base_path / "data" / "legal",

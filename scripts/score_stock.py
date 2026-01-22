@@ -22,9 +22,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.helpers import load_json
 from utils.config import (
-    COMPONENT_WEIGHTS as WEIGHTS,
     THRESHOLDS,
     GATES,
+    get_component_weights,
     get_recommendation,
 )
 
@@ -333,7 +333,7 @@ def build_comprehensive_summary(technical: dict, fundamentals: dict, news: dict,
     return " ".join(parts)
 
 
-def score_stock(symbol: str, broker: str | None = None) -> dict:
+def score_stock(symbol: str, broker: str | None = None, profile: str | None = None) -> dict:
     """
     Aggregate all analysis data and compute final score.
 
@@ -394,21 +394,24 @@ def score_stock(symbol: str, broker: str | None = None) -> dict:
     news_score = news_score if coverage["news"] else None
     legal_score = legal_score if coverage["legal"] else None
 
+    # Select scoring profile (weights only; gates remain global for now)
+    weights = get_component_weights(profile)
+
     # Build weights dict for present components only (renormalization)
     active_weights = {}
     active_scores = {}
 
     if technical_score is not None:
-        active_weights["technical"] = WEIGHTS["technical"]
+        active_weights["technical"] = weights["technical"]
         active_scores["technical"] = technical_score
     if fundamental_score is not None:
-        active_weights["fundamental"] = WEIGHTS["fundamental"]
+        active_weights["fundamental"] = weights["fundamental"]
         active_scores["fundamental"] = fundamental_score
     if news_score is not None:
-        active_weights["news_sentiment"] = WEIGHTS["news_sentiment"]
+        active_weights["news_sentiment"] = weights["news_sentiment"]
         active_scores["news_sentiment"] = news_score
     if legal_score is not None:
-        active_weights["legal_corporate"] = WEIGHTS["legal_corporate"]
+        active_weights["legal_corporate"] = weights["legal_corporate"]
         active_scores["legal_corporate"] = legal_score
 
     # Renormalize weights to sum to 1.0
@@ -518,6 +521,7 @@ def score_stock(symbol: str, broker: str | None = None) -> dict:
         "symbol": symbol_clean,
         "symbol_yf": symbol_yf,
         "broker": holding_broker or "unknown",
+        "scoring_profile": (profile or "default"),
         "name": name,
         "quantity": quantity,
         "avg_price": avg_price,
@@ -549,11 +553,12 @@ def score_stock(symbol: str, broker: str | None = None) -> dict:
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: uv run python scripts/score_stock.py <symbol> [--broker <broker>]", file=sys.stderr)
+        print("Usage: uv run python scripts/score_stock.py <symbol> [--broker <broker>] [--profile <profile>]", file=sys.stderr)
         sys.exit(1)
 
     symbol = sys.argv[1]
     broker = None
+    profile = None
 
     # Parse --broker argument
     if "--broker" in sys.argv:
@@ -562,7 +567,12 @@ def main():
             broker = sys.argv[idx + 1]
 
     try:
-        result = score_stock(symbol, broker)
+        if "--profile" in sys.argv:
+            idx = sys.argv.index("--profile")
+            if idx + 1 < len(sys.argv):
+                profile = sys.argv[idx + 1]
+
+        result = score_stock(symbol, broker, profile)
 
         # Save to data/scores/<symbol>@<broker>.json or <symbol>.json
         base_path = Path(__file__).parent.parent

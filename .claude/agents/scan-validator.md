@@ -44,3 +44,15 @@ Return ONLY:
 ```
 Done: Enriched scan (file: <name>). Symbols analyzed: Y. Top 2w breakout: A B C. Top 2m pullback: D E F.
 ```
+
+## OPTIONAL: ADD TOP PICKS TO WATCHLIST (V2)
+
+If the user explicitly asks to add top picks to a watchlist, do it after enrichment/ranking:
+```bash
+uv run python scripts/watchlist_events.py add <watchlist_id> <SYMBOL_OR_TICKER> --setup 2w_breakout --horizon 2w --scan-type 2w_breakout --source-scan "<scan file path>" --reason "<why>" --tags "scanner"
+uv run python scripts/watchlist_events.py add <watchlist_id> <SYMBOL_OR_TICKER> --setup 2m_pullback --horizon 2m --scan-type 2m_pullback --source-scan "<scan file path>" --reason "<why>" --tags "scanner"
+uv run python scripts/watchlist_events.py rebuild <watchlist_id>
+uv run python scripts/watchlist_events.py validate <watchlist_id>
+uv run python scripts/watchlist_snapshot.py <watchlist_id>
+uv run python scripts/watchlist_report.py <watchlist_id>
+```

@@ -26,3 +26,16 @@ Return ONLY:
 - top 10 symbols for `2w_breakout` with `score` and 1-line `why`
 - any obvious “don’t chase” flags (overextended / low volume / not in trend)
 
+## OPTIONAL: ADD TO WATCHLIST (V2)
+
+If the user explicitly asks to add the shortlist to a watchlist:
+```bash
+uv run python scripts/watchlist_events.py add <watchlist_id> <SYMBOL_OR_TICKER> \
+  --setup 2w_breakout --horizon 2w \
+  --entry-zone "<entry guidance>" --invalidation "<invalidation rule>" \
+  --scan-type 2w_breakout --source-scan "<scan file path>" --reason "<why>" --tags "breakout"
+uv run python scripts/watchlist_events.py rebuild <watchlist_id>
+uv run python scripts/watchlist_events.py validate <watchlist_id>
+uv run python scripts/watchlist_snapshot.py <watchlist_id>
+uv run python scripts/watchlist_report.py <watchlist_id>
+```

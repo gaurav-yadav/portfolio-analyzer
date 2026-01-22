@@ -118,6 +118,12 @@ If sources conflict or numbers are unclear, prefer `null` + a short note over gu
 
 Write the updated JSON back to `data/ipos.json`.
 
+Then validate + render a quick report (deterministic, no web):
+```bash
+uv run python scripts/validate_ipos.py
+uv run python scripts/render_ipos.py
+```
+
 ## IMPORTANT: MINIMAL RESPONSE
 
 Return ONLY:

@@ -4,6 +4,7 @@ Batch Scorer - Scores all holdings.
 
 Usage:
     uv run python scripts/score_all.py
+    uv run python scripts/score_all.py --profile watchlist_swing
 
 Reads holdings from data/holdings.json and scores each holding (per broker).
 """
@@ -14,6 +15,12 @@ import sys
 from pathlib import Path
 
 def main():
+    profile = None
+    if "--profile" in sys.argv:
+        idx = sys.argv.index("--profile")
+        if idx + 1 < len(sys.argv):
+            profile = sys.argv[idx + 1]
+
     base_path = Path(__file__).parent.parent
     holdings_file = base_path / "data" / "holdings.json"
 
@@ -40,6 +47,8 @@ def main():
         cmd = ["uv", "run", "python", "scripts/score_stock.py", symbol]
         if broker and broker != "unknown":
             cmd.extend(["--broker", broker])
+        if profile:
+            cmd.extend(["--profile", profile])
 
         result = subprocess.run(
             cmd,

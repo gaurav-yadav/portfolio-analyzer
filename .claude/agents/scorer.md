@@ -13,7 +13,7 @@ Given a symbol, read all analysis data and compute the final weighted score and 
 
 Run the scoring script:
 ```bash
-uv run python scripts/score_stock.py <symbol>
+uv run python scripts/score_stock.py <symbol> [--broker <broker>] [--profile <profile>]
 ```
 
 The script will:
@@ -26,14 +26,21 @@ The script will:
 7. Generate recommendation
 8. Output final JSON
 
-## SCORING WEIGHTS
+## SCORING WEIGHTS (PROFILES)
 
+The scorer supports job-specific weight profiles:
+- `default` (current pipeline default)
+- `watchlist_swing` (technical-heavy; for watchlist candidates)
+- `portfolio_long_term` (fundamental/governance heavier; for holdings)
+
+Example:
+```bash
+uv run python scripts/score_stock.py RELIANCE.NS --profile portfolio_long_term
 ```
-Technical:       35%
-Fundamental:     30%
-News Sentiment:  20%
-Legal/Corporate: 15%
-```
+
+Guidance:
+- For **portfolio holdings**: use `--profile portfolio_long_term`
+- For **watchlist candidates / scanner picks**: use `--profile watchlist_swing`
 
 ## RECOMMENDATION MAPPING
 

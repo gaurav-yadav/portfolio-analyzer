@@ -57,15 +57,25 @@ After searching, write a JSON file to `data/news/{symbol}.json`:
 ```json
 {
     "symbol": "RELIANCE.NS",
+    "symbol_yf": "RELIANCE.NS",
+    "as_of": "2026-01-01T14:30:00+05:30",
     "news_sentiment": "positive",
     "analyst_consensus": "buy",
     "target_price_avg": 3100,
     "target_vs_current": 7.3,
     "sector_outlook": "positive",
     "news_sentiment_score": 7,
-    "news_summary": "Positive analyst coverage after Q3 results. Target prices raised. Sector tailwinds."
+    "news_summary": "Positive analyst coverage after Q3 results. Target prices raised. Sector tailwinds.",
+    "sources": ["https://...", "https://..."]
 }
 ```
+
+**Required fields for staleness tracking:**
+- `symbol_yf`: Must match the Yahoo Finance symbol exactly
+- `as_of`: ISO8601 timestamp of when this research was performed
+- `sources`: List of URLs used for this research
+
+Keep existing `timestamp` field for backward compatibility, but `as_of` is the canonical field going forward.
 
 Use the Write tool to save this JSON file.
 
@@ -82,6 +92,15 @@ If you cannot find reliable data:
 - Set `news_sentiment` to "neutral"
 - Set `news_sentiment_score` to 5
 - Note in summary: "Limited recent news coverage"
+
+## STALENESS / REFRESH (ORCHESTRATOR-CONTROLLED)
+
+The orchestrator (portfolio-analyzer agent) runs `scripts/research_status.py` to determine what needs refresh. You will be called only when the orchestrator determines this symbol's news/sentiment is missing or stale.
+
+When called:
+- Always perform fresh research via web search
+- Always update `as_of` to the current timestamp
+- Always populate `sources` with the URLs you used
 
 ## IMPORTANT: MINIMAL RESPONSE
 

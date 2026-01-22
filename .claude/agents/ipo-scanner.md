@@ -150,6 +150,12 @@ The scanner stage should capture "terms of the issue" so later research/scoring 
 
 Write the updated JSON to `data/ipos.json`.
 
+Then validate + render a quick report (deterministic, no web):
+```bash
+uv run python scripts/validate_ipos.py
+uv run python scripts/render_ipos.py
+```
+
 ## IMPORTANT: MINIMAL RESPONSE
 
 To conserve context, return ONLY a brief status message:

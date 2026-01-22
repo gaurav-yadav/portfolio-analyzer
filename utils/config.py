@@ -15,6 +15,28 @@ COMPONENT_WEIGHTS = {
 }
 
 # =============================================================================
+# SCORING PROFILES (Job-specific weight presets)
+# =============================================================================
+SCORING_PROFILES = {
+    # Backward-compatible default (current pipeline behavior)
+    "default": COMPONENT_WEIGHTS,
+    # Watchlist/swing-trade oriented (1–8 weeks): technical-heavy, legal as gate
+    "watchlist_swing": {
+        "technical": 0.60,
+        "fundamental": 0.20,
+        "news_sentiment": 0.10,
+        "legal_corporate": 0.10,
+    },
+    # Portfolio/long-term oriented: fundamentals + governance matter more
+    "portfolio_long_term": {
+        "technical": 0.25,
+        "fundamental": 0.40,
+        "news_sentiment": 0.15,
+        "legal_corporate": 0.20,
+    },
+}
+
+# =============================================================================
 # RECOMMENDATION THRESHOLDS
 # =============================================================================
 THRESHOLDS = {
@@ -75,6 +97,20 @@ def get_recommendation(score: float, thresholds: dict = None) -> str:
         return "SELL"
     else:
         return "STRONG SELL"
+
+
+def get_component_weights(profile: str | None = None) -> dict:
+    """
+    Return component weights for a scoring profile.
+
+    Profiles allow the same pipeline to be reused for different jobs
+    (watchlist scanning vs long-term portfolio tracking).
+    """
+    key = (profile or "default").strip()
+    if key in SCORING_PROFILES:
+        return SCORING_PROFILES[key]
+    valid = ", ".join(sorted(SCORING_PROFILES.keys()))
+    raise ValueError(f"Unknown scoring profile: {key}. Choose one of: {valid}")
 
 
 # =============================================================================

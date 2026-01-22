@@ -26,3 +26,16 @@ Return ONLY:
 - top 10 symbols for `support_reversal` with `score` and 1-line `why`
 - the invalidation rule to use (e.g., “close below support” / “below recent swing low”)
 
+## OPTIONAL: ADD TO WATCHLIST (V2)
+
+If the user explicitly asks to add the shortlist to a watchlist:
+```bash
+uv run python scripts/watchlist_events.py add <watchlist_id> <SYMBOL_OR_TICKER> \
+  --setup support_reversal --horizon 2w \
+  --entry-zone "<entry guidance>" --invalidation "<invalidation rule>" \
+  --scan-type support_reversal --source-scan "<scan file path>" --reason "<why>" --tags "reversal"
+uv run python scripts/watchlist_events.py rebuild <watchlist_id>
+uv run python scripts/watchlist_events.py validate <watchlist_id>
+uv run python scripts/watchlist_snapshot.py <watchlist_id>
+uv run python scripts/watchlist_report.py <watchlist_id>
+```

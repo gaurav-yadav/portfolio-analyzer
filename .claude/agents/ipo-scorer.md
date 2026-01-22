@@ -129,6 +129,12 @@ For each IPO record scored/updated:
 After all updates:
 - Increment `file_revision` by +1, update `updated_at`, append file-level `change_log`.
 
+Then validate + render a quick report (deterministic, no web):
+```bash
+uv run python scripts/validate_ipos.py
+uv run python scripts/render_ipos.py
+```
+
 ## IMPORTANT: MINIMAL RESPONSE
 
 Return ONLY:

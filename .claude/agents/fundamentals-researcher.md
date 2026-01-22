@@ -59,6 +59,8 @@ After searching, write a JSON file to `data/fundamentals/{symbol}.json`:
 ```json
 {
     "symbol": "RELIANCE.NS",
+    "symbol_yf": "RELIANCE.NS",
+    "as_of": "2026-01-01T14:30:00+05:30",
     "pe_ratio": 25.5,
     "pe_vs_sector": "below",
     "revenue_growth_yoy": 12.5,
@@ -67,9 +69,17 @@ After searching, write a JSON file to `data/fundamentals/{symbol}.json`:
     "debt_to_equity": 0.45,
     "roe": 18.5,
     "fundamental_score": 7,
-    "fundamental_summary": "Q3 results beat estimates with 12% revenue growth. Margins stable. Low debt."
+    "fundamental_summary": "Q3 results beat estimates with 12% revenue growth. Margins stable. Low debt.",
+    "sources": ["https://...", "https://..."]
 }
 ```
+
+**Required fields for staleness tracking:**
+- `symbol_yf`: Must match the Yahoo Finance symbol exactly
+- `as_of`: ISO8601 timestamp of when this research was performed (used by staleness checker)
+- `sources`: List of URLs or identifiers used for this research
+
+Keep existing `timestamp` field for backward compatibility, but `as_of` is the canonical field going forward.
 
 Use the Write tool to save this JSON file.
 
@@ -86,6 +96,15 @@ If you cannot find reliable data:
 - Use `null` for missing numeric fields
 - Set `fundamental_score` to 5 (neutral)
 - Note in summary: "Limited fundamental data available"
+
+## STALENESS / REFRESH (ORCHESTRATOR-CONTROLLED)
+
+The orchestrator (portfolio-analyzer agent) runs `scripts/research_status.py` to determine what needs refresh. You will be called only when the orchestrator determines this symbol's fundamentals are missing or stale.
+
+When called:
+- Always perform fresh research via web search
+- Always update `as_of` to the current timestamp
+- Always populate `sources` with the URLs you used
 
 ## IMPORTANT: MINIMAL RESPONSE
 

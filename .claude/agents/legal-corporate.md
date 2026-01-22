@@ -95,14 +95,24 @@ After searching, write a JSON file to `data/legal/{symbol}.json`:
 ```json
 {
     "symbol": "RELIANCE.NS",
+    "symbol_yf": "RELIANCE.NS",
+    "as_of": "2026-01-01T14:30:00+05:30",
     "red_flags": [],
     "positive_signals": ["Won $500M defense contract", "Promoter increased stake"],
     "corporate_actions": ["Bonus 1:1 announced"],
     "legal_corporate_score": 8,
     "has_severe_red_flag": false,
-    "legal_summary": "No legal concerns. Major defense order win. Bonus announced."
+    "legal_summary": "No legal concerns. Major defense order win. Bonus announced.",
+    "sources": ["https://...", "https://..."]
 }
 ```
+
+**Required fields for staleness tracking:**
+- `symbol_yf`: Must match the Yahoo Finance symbol exactly
+- `as_of`: ISO8601 timestamp of when this research was performed
+- `sources`: List of URLs used for this research
+
+Keep existing `timestamp` field for backward compatibility, but `as_of` is the canonical field going forward.
 
 Use the Write tool to save this JSON file.
 
@@ -128,6 +138,15 @@ If you cannot find information:
 - Set `red_flags` to empty array
 - Set `legal_corporate_score` to 5 (neutral - assume no news is okay)
 - Note in summary: "No significant legal or corporate news found"
+
+## STALENESS / REFRESH (ORCHESTRATOR-CONTROLLED)
+
+The orchestrator (portfolio-analyzer agent) runs `scripts/research_status.py` to determine what needs refresh. You will be called only when the orchestrator determines this symbol's legal/corporate data is missing or stale.
+
+When called:
+- Always perform fresh research via web search
+- Always update `as_of` to the current timestamp
+- Always populate `sources` with the URLs you used
 
 ## IMPORTANT: MINIMAL RESPONSE
 

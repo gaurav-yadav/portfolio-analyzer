@@ -129,10 +129,74 @@ This updates the scan JSON in-place with:
 - Setup scores (2w breakout, 2m pullback, reversal cross-check)
 - Ranked shortlists for review
 
-### 4) Report (minimal)
+### 3b) Optional: Persist candidates to a watchlist (v2)
+
+If the user asks to “add top picks to watchlist <watchlist_id>”, do it **after** enrichment/ranking.
+
+For each chosen symbol, append an `ADD` event with the agent’s judgment fields (setup/horizon/entry/invalidation/tags):
+```bash
+uv run python scripts/watchlist_events.py add <watchlist_id> <SYMBOL_OR_TICKER> \
+  --setup <2w_breakout|2m_pullback|support_reversal> \
+  --horizon <2w|2m> \
+  --entry-zone "<entry guidance>" \
+  --invalidation "<invalidation rule>" \
+  --scan-type "<2w_breakout|2m_pullback|...>" \
+  --source-scan "<scan file path>" \
+  --reason "<1–2 line thesis>" \
+  --tags "sector,theme"
+```
+
+Then rebuild + validate the watchlist:
+```bash
+uv run python scripts/watchlist_events.py rebuild <watchlist_id>
+uv run python scripts/watchlist_events.py validate <watchlist_id>
+```
+
+Optionally write a per-run snapshot/report:
+```bash
+uv run python scripts/watchlist_snapshot.py <watchlist_id>
+uv run python scripts/watchlist_report.py <watchlist_id>
+```
+
+### 4) Write decisions log (AGENT-WRITTEN, REQUIRED)
+
+Write a decisions log to `data/runs/<run_id>/decisions.md` documenting:
+
+```markdown
+# Scanner Decisions — <run_id>
+
+## Scan Used
+- File: `data/scans/scan_YYYYMMDD_HHMMSS.json`
+- Focus: <country/sector if any>
+- Total unique stocks: N
+
+## Shortlist Selection
+### 2w_breakout (top picks)
+| Symbol | Score | Why selected |
+|--------|-------|--------------|
+| XYZ.NS | 78    | Strong volume, near breakout level |
+
+### 2m_pullback (top picks)
+| Symbol | Score | Why selected |
+|--------|-------|--------------|
+
+## Watchlist Changes (if applicable)
+- **Added to `<watchlist_id>`**: SYMBOL1 (reason), SYMBOL2 (reason)
+- **Skipped**: SYMBOL3 (already on watchlist), SYMBOL4 (sector cap reached)
+
+## Data Issues
+- Missing OHLCV: SYMBOL5, SYMBOL6
+- Too few rows: SYMBOL7
+```
+
+Generate the `run_id` as `YYYYMMDD_HHMMSS` from the scan timestamp.
+This log is for auditability — scripts never write this narrative, only agents do.
+
+### 5) Report (minimal)
 
 Return ONLY:
 - scan file path
+- decisions log path
 - top 5 for `2w_breakout` and top 5 for `2m_pullback`
 - note any data issues (missing OHLCV, too few rows)
 

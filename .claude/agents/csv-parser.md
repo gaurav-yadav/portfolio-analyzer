@@ -29,6 +29,14 @@ uv run python scripts/parse_csv.py input/kite.csv input/groww.csv
 
 3. Verify the output looks correct and report back.
 
+### Optional: Normalize + add portfolio metadata
+
+If the user provides a `portfolio_id` / `country` / `platform` (or you want consistent schema for snapshots),
+normalize deterministically after parsing:
+```bash
+uv run python scripts/holdings_validate.py --portfolio-id <portfolio_id> --country india --platform <zerodha|groww>
+```
+
 ## EXPECTED OUTPUT FORMAT
 
 The script outputs JSON array of holdings:

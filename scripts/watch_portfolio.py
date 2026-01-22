@@ -4,12 +4,12 @@ Portfolio Watcher - lightweight monitoring for holdings + watchlist.
 
 Usage:
   uv run python scripts/watch_portfolio.py
-  uv run python scripts/watch_portfolio.py --holdings --watchlist
+  uv run python scripts/watch_portfolio.py --holdings --watchlist-id swing
   uv run python scripts/watch_portfolio.py --symbols RELIANCE.NS TCS.NS
 
 What it does:
   - Loads holdings from data/holdings.json (optional)
-  - Loads watchlist from data/watchlist.json (optional)
+  - Loads watchlist from data/watchlists/<watchlist_id>/watchlist.json (optional)
   - Uses cached OHLCV under cache/ohlcv/<symbol_yf>.parquet (no fetch)
   - Uses technical snapshots under data/technical/<symbol_yf>.json when present
   - Computes a few practical "signals with context" (ATR%, drawdown, trend)
@@ -112,11 +112,11 @@ def load_holdings_aggregated() -> dict[str, HoldingAgg]:
     return result
 
 
-def load_watchlist_entries(default_suffix: str) -> dict[str, dict]:
-    if not WATCHLIST_PATH.exists():
+def load_watchlist_entries(default_suffix: str, watchlist_path: Path = WATCHLIST_PATH) -> dict[str, dict]:
+    if not watchlist_path.exists():
         return {}
 
-    watchlist = json.loads(WATCHLIST_PATH.read_text())
+    watchlist = json.loads(watchlist_path.read_text())
     entries: dict[str, dict] = {}
     for stock in (watchlist.get("stocks") or []):
         raw = (stock.get("symbol") or "").strip()
@@ -361,14 +361,18 @@ def print_table(report: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Watch holdings + watchlist using local cache and snapshots.")
     parser.add_argument("--holdings", action="store_true", help="Include data/holdings.json")
-    parser.add_argument("--watchlist", action="store_true", help="Include data/watchlist.json")
+    parser.add_argument(
+        "--watchlist-id",
+        default="",
+        help="Include symbols from data/watchlists/<watchlist_id>/watchlist.json.",
+    )
     parser.add_argument("--default-suffix", default=".NS", help="Suffix for watchlist symbols without exchange suffix (default: .NS)")
     parser.add_argument("--symbols", nargs="*", default=[], help="Explicit Yahoo Finance tickers to include")
     parser.add_argument("--out", default="", help="Output JSON path (default: data/watcher/watch_YYYYMMDD_HHMMSS.json)")
     args = parser.parse_args()
 
     use_holdings = args.holdings
-    use_watchlist = args.watchlist
+    use_watchlist = bool(args.watchlist_id)
     explicit_symbols = [s for s in (args.symbols or []) if s.strip()]
 
     # Default behavior for this watcher: include both, if available.
@@ -377,7 +381,17 @@ def main() -> None:
         use_watchlist = True
 
     holdings = load_holdings_aggregated() if use_holdings else {}
-    watchlist = load_watchlist_entries(args.default_suffix) if use_watchlist else {}
+    watchlist_path = WATCHLIST_PATH
+    if args.watchlist_id:
+        watchlist_path = BASE_PATH / "data" / "watchlists" / args.watchlist_id / "watchlist.json"
+        if not watchlist_path.exists():
+            print(
+                f"Error: watchlist not found at {watchlist_path}. "
+                "Create it via: uv run python scripts/watchlist_events.py add <watchlist_id> <symbol>",
+                file=sys.stderr,
+            )
+            return
+    watchlist = load_watchlist_entries(args.default_suffix, watchlist_path=watchlist_path) if use_watchlist else {}
 
     symbols: list[str] = []
     symbols.extend(list(holdings.keys()))

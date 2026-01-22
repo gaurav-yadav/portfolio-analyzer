@@ -1,81 +1,134 @@
-# Portfolio Analyzer — Claude Code Entry Point
+# Portfolio Analyzer — Claude Code Entry Point (vNext)
 
-## Non-Negotiables
+This repo is designed so that:
+- **Agents do the thinking and branching** (what to run next, what to add/remove, when to refresh research).
+- **Scripts do deterministic work** (parsing, calculations, ranking, normalization, snapshots).
 
-- Do **not** fall back to `general-purpose` for scanning/flows.
-- If a requested agent type is missing, **stop** and ask the user to restart Claude Code / verify `.claude/agents/`.
-- Scripts are run via `uv run python …` (or directly via `.venv/bin/python …` if `uv` is blocked).
+Keep responses minimal; write all details to files.
 
-## Intents → Agent → Sequence
+---
 
-### Stock Scanner (technical discovery)
+## Non‑Negotiables
 
-Trigger: “run stock scanner”, “scan for stocks”, “scan midcaps in <sector>”
+- Prefer **deterministic scripts** for transforms and state writes.
+- Use **event-sourced watchlists** (`data/watchlists/<watchlist_id>/`).
+- Treat WebSearch/WebFetch outputs as **candidate discovery only**; confirm tradability via OHLCV-based validation (`scripts/validate_scan.py`).
+- When data is missing/stale, **refresh only what’s needed** (don’t rerun everything blindly).
 
-1) Run `scanner` (WebSearch discovery → writes `data/scans/scan_*.json`)
-2) Run `scan-validator` (OHLCV confluence → enriches the same scan JSON)
-3) Optional: `breakout-crosscheck` / `reversal-crosscheck`
-4) Optional: add to watchlist via `scripts/watchlist.py`
+---
 
-### Stock Scanner (fundamental discovery)
+## Primary Jobs (3)
 
-Trigger: “run fundamental scanner”, “scan small caps”, “find midcap compounders”
+1) **Watchlists + Scanner**
+   - Create/manage watchlists; store *what/why/entry/invalidation/timing/re-entry* in events.
+   - Scan stocks and add best candidates to watchlists.
+   - Track outcomes via per-run snapshots.
 
-1) Run `fundamental-scanner` (WebSearch discovery → writes `data/scans/fundamental_scan_*.json`)
-2) Optional: add candidates to watchlist for tracking
+2) **Portfolios**
+   - Import holdings, compute technicals, add research context, score, generate report.
+   - Track runs over time via portfolio snapshots.
 
-### Portfolio Watcher (monitoring)
+3) **IPO Scanner**
+   - Maintain `data/ipos.json`, research IPOs, score/rank them.
 
-Trigger: “watch my portfolio”, “run portfolio watcher”
+---
 
-1) Run `portfolio-watcher` (updates cache + technicals, then writes `data/watcher/watch_*.json`)
-2) Optional: `scripts/track_performance.py` for watchlist returns
+## Intents → Agent → Deterministic Steps
 
-### Portfolio Analyzer (deep analysis + report)
+### Watchlist management (v2)
+Trigger: “create watchlist”, “add to watchlist”, “remove from watchlist”, “snapshot watchlist”
+- Agent: `watchlist-manager` (`.claude/agents/watchlist-manager.md`)
+- Scripts:
+  - `uv run python scripts/watchlist_events.py add|remove|note <watchlist_id> ...`
+  - `uv run python scripts/watchlist_events.py rebuild <watchlist_id>`
+  - `uv run python scripts/watchlist_events.py validate <watchlist_id>`
+  - `uv run python scripts/watchlist_snapshot.py <watchlist_id>`
+  - Optional: `uv run python scripts/watchlist_report.py <watchlist_id>`
 
-Trigger: “analyze my portfolio from `<csv_path>`”
+### Stock scanner → validated shortlists
+Trigger: “run stock scanner”, “scan for stocks”
+- Agent: `scanner` → `scan-validator` → optional `breakout-crosscheck` / `reversal-crosscheck`
+- Deterministic validation: `uv run python scripts/validate_scan.py latest --enrich-setups --rank`
+- Optional add-to-watchlist: use `watchlist-manager` (or directly append events via `watchlist_events.py`).
 
-1) Import holdings: `csv-parser` (Zerodha/Groww) or `portfolio-importer` (any CSV)
-2) Fetch OHLCV: `scripts/fetch_all.py`
-3) Technicals: `scripts/technical_all.py`
-4) Web research agents (batched): `fundamentals-researcher`, `news-sentiment`, `legal-corporate`
-5) Score: `scripts/score_all.py`
-6) Report: `scripts/compile_report.py` → `output/analysis_YYYYMMDD_HHMMSS.csv`
+### Portfolio monitoring (holdings + watchlist signals)
+Trigger: “watch my portfolio”, “monitor my holdings”
+- Agent: `portfolio-watcher` (`.claude/agents/portfolio-watcher.md`)
+- Scripts:
+  - `uv run python scripts/fetch_all.py --holdings --watchlist-id <watchlist_id>`
+  - `uv run python scripts/technical_all.py --holdings --watchlist-id <watchlist_id>`
+  - `uv run python scripts/watch_portfolio.py --holdings --watchlist-id <watchlist_id>`
+  - `uv run python scripts/watchlist_snapshot.py <watchlist_id>`
 
-## Agent Roster (must exist as Task subagents)
+### Full portfolio analysis (end-to-end)
+Trigger: “analyze my portfolio from …”, “run full portfolio analysis”
+- Agent: `portfolio-analyzer` (`.claude/agents/portfolio-analyzer.md`)
+- Import options:
+  - Agent-extracted holdings JSON → normalize: `uv run python scripts/holdings_validate.py ...`
+  - CSV/TSV import: `uv run python scripts/portfolio_importer.py ...`
+  - Zerodha/Groww CSV: `uv run python scripts/parse_csv.py ...` then `holdings_validate.py`
+- Then:
+  - `uv run python scripts/fetch_all.py --holdings`
+  - `uv run python scripts/technical_all.py --holdings`
+  - Run staleness gate: `uv run python scripts/research_status.py --holdings --days 30 --out data/runs/<run_id>/research_status.json`
+    - The 30-day policy is enforced by the script output, not agent judgment
+    - Agents branch based on `missing`/`stale` status per symbol
+  - Web research agents as-needed (missing/stale fundamentals/news/legal)
+  - `uv run python scripts/score_all.py --profile portfolio_long_term`
+  - `uv run python scripts/compile_report.py`
+  - `uv run python scripts/portfolio_snapshot.py --portfolio-id <portfolio_id>`
 
-- `scanner` (`.claude/agents/scanner.md`)
-- `scan-validator` (`.claude/agents/scan-validator.md`)
-- `breakout-crosscheck` (`.claude/agents/breakout-crosscheck.md`)
-- `reversal-crosscheck` (`.claude/agents/reversal-crosscheck.md`)
-- `fundamental-scanner` (`.claude/agents/fundamental-scanner.md`)
-- `portfolio-watcher` (`.claude/agents/portfolio-watcher.md`)
-- `csv-parser` (`.claude/agents/csv-parser.md`)
-- `portfolio-importer` (`.claude/agents/portfolio-importer.md`)
-- `data-fetcher` (`.claude/agents/data-fetcher.md`)
-- `technical-analyst` (`.claude/agents/technical-analyst.md`)
-- `fundamentals-researcher` (`.claude/agents/fundamentals-researcher.md`)
-- `news-sentiment` (`.claude/agents/news-sentiment.md`)
-- `legal-corporate` (`.claude/agents/legal-corporate.md`)
-- `scorer` (`.claude/agents/scorer.md`)
-- IPO helpers: `ipo-scanner`, `ipo-researcher`, `ipo-scorer`
+### IPO system
+Trigger: “scan upcoming IPOs”, “update IPO list”, “score IPOs”
+- Agents: `ipo-scanner`, `ipo-researcher`, `ipo-scorer`
+- Deterministic checks/render:
+  - `uv run python scripts/validate_ipos.py`
+  - `uv run python scripts/render_ipos.py`
 
-## File Naming (actual scripts)
+---
 
-- OHLCV cache: `cache/ohlcv/<symbol_yf>.parquet`
-- Portfolio technicals: `data/technical/<symbol_yf>.json`
-- Portfolio research: `data/fundamentals/<symbol_yf>.json`, `data/news/<symbol_yf>.json`, `data/legal/<symbol_yf>.json`
-- Scanner technical breakdowns: `data/scan_technical/<symbol_clean>.json` (from `scripts/verify_scan.py`)
-- Scanner scan files: `data/scans/scan_*.json` (technical), `data/scans/fundamental_scan_*.json` (fundamental)
+## Agent Roster (Expected to Exist)
 
-## Quick Commands (manual)
+Watchlists / portfolio:
+- `watchlist-manager`
+- `portfolio-analyzer`
+- `portfolio-watcher`
+- `portfolio-importer`
+- `csv-parser`
 
-```bash
-# Portfolio watcher (holdings + watchlist)
-uv run python scripts/fetch_all.py --holdings --watchlist
-uv run python scripts/technical_all.py --holdings --watchlist
-uv run python scripts/watch_portfolio.py --holdings --watchlist
+Scanner:
+- `scanner`
+- `scan-validator`
+- `breakout-crosscheck`
+- `reversal-crosscheck`
+- `technical-analyst`
 
-# Validate a specific scan
-uv run python scripts/validate_scan.py data/scans/scan_YYYYMMDD_HHMMSS.json --enrich-setups --rank
-```
+Research + scoring:
+- `fundamentals-researcher`
+- `news-sentiment`
+- `legal-corporate`
+- `scorer`
+
+IPOs:
+- `ipo-scanner`
+- `ipo-researcher`
+- `ipo-scorer`
+
+---
+
+## Key File Contracts
+
+### Watchlists v2
+- Events (source of truth): `data/watchlists/<watchlist_id>/events.jsonl`
+- Materialized view: `data/watchlists/<watchlist_id>/watchlist.json`
+- Per-run snapshots: `data/watchlists/<watchlist_id>/snapshots/<run_id>.json`
+
+### Portfolio snapshots
+- `data/portfolios/<portfolio_id>/snapshots/<run_id>.json` (written from `data/scores/*.json`)
+
+### Scans
+- `data/scans/scan_*.json` (written by `scanner`)
+- Enrichment + rankings stored in-place under `scan.validation.*` (`scripts/validate_scan.py`)
+
+### IPO DB
+- `data/ipos.json` (single canonical DB with revision logs)
