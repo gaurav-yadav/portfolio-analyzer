@@ -16,7 +16,7 @@ a { color:#00d4ff; text-decoration:none; }
 .nav-tab.active { color:#00d4ff; border-bottom-color:#00d4ff; }
 
 /* Layout */
-.container { max-width:1200px; margin:0 auto; padding:20px; }
+.container { max-width:1200px; margin:0 auto; padding:20px; padding-bottom:48px; }
 .page { display:none; }
 .page.active { display:block; }
 
@@ -65,6 +65,10 @@ select { background:#1a1a2e; color:#e0e0e0; border:1px solid #2a2a3e; padding:8p
 button.chart-btn { background:#1a1a2e; color:#888; border:1px solid #2a2a3e; padding:5px 12px; border-radius:6px; font-size:12px; cursor:pointer; transition:all .15s; }
 button.chart-btn:hover { color:#ccc; border-color:#444; }
 button.chart-btn.active { color:#00d4ff; border-color:#00d4ff; background:#00d4ff15; }
+
+/* Disclaimer */
+.disclaimer { position:fixed; bottom:0; left:0; right:0; background:#1a1a2e; border-top:1px solid #2a2a3e; padding:8px 16px; text-align:center; font-size:11px; color:#666; z-index:100; }
+.disclaimer a { color:#00d4ff80; }
 
 /* Empty state */
 .prox-in { color:#059669; font-weight:700; }
@@ -899,5 +903,9 @@ loadSuggestions();
 loadWatchlist();
 document.getElementById('lastUpdate').textContent = 'Loaded: ' + new Date().toLocaleTimeString();
 </script>
+
+<div class="disclaimer">
+  Experimental learning tool only. Data may be stale, inaccurate, or fabricated. Do not use for actual trading decisions.
+</div>
 </body>
 </html>
