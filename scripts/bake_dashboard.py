@@ -128,11 +128,41 @@ def load_watchlists() -> list:
     d = DATA / "watchlists"
     if not d.exists():
         return []
-    results = []
+
+    # Collect all stocks by watchlist id, merging both formats
+    by_id: dict = {}
+
+    def merge_into(wl_id: str, data: dict):
+        stocks = data.get("watchlist") or data.get("stocks") or []
+        if wl_id not in by_id:
+            by_id[wl_id] = {"meta": data, "stocks": {}}
+        for s in stocks:
+            ticker = s.get("ticker") or s.get("symbol") or ""
+            if ticker:
+                by_id[wl_id]["stocks"][ticker] = s  # later write wins for same ticker
+
+    # Format 1: flat files — data/watchlists/<name>.json
     for f in d.glob("*.json"):
         data = read_json(f)
         if data:
-            results.append({"id": f.stem, "data": data})
+            merge_into(f.stem, data)
+
+    # Format 2: subdirs — data/watchlists/<name>/watchlist.json
+    for subdir in d.iterdir():
+        if not subdir.is_dir():
+            continue
+        wl_file = subdir / "watchlist.json"
+        if wl_file.exists():
+            data = read_json(wl_file)
+            if data:
+                merge_into(subdir.name, data)
+
+    # Build output list
+    results = []
+    for wl_id, merged in by_id.items():
+        out = dict(merged["meta"])
+        out["watchlist"] = list(merged["stocks"].values())
+        results.append({"id": wl_id, "data": out})
     return results
 
 
