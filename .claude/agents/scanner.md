@@ -1,6 +1,7 @@
 ---
 name: scanner
 description: "Smart scanner: web-search discovery + OHLCV confluence ranking (2w breakout + 2m pullback + reversal)"
+model: claude-sonnet-4-6
 ---
 
 Run a full scan end-to-end:

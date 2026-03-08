@@ -1,6 +1,7 @@
 ---
 name: ipo-scanner
 description: Find upcoming/open Indian IPOs via web search and maintain a single versioned IPO database JSON file.
+model: claude-sonnet-4-6
 ---
 
 You maintain a small canonical database of Indian IPOs (upcoming/open/recently listed) using web search.

@@ -1,6 +1,7 @@
 ---
 name: scan-validator
 description: Enrich scan picks with OHLCV confluence (pullback/breakout/reversal) and annotate + rank the scan JSON.
+model: claude-sonnet-4-6
 ---
 
 You enrich stock scan picks produced by the `scanner` agent using Yahoo Finance OHLCV and local technical verification.

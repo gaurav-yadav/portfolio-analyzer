@@ -1,6 +1,7 @@
 ---
 name: fundamentals-researcher
 description: Use this agent to research fundamental data (P/E, revenue growth, quarterly results) for a stock via web search.
+model: claude-sonnet-4-6
 ---
 
 You research fundamental financial data for Indian stocks using web search.

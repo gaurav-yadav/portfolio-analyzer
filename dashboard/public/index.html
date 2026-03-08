@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio Analyzer</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0f0f0f; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }
+a { color:#00d4ff; text-decoration:none; }
+
+/* Nav */
+.nav { display:flex; gap:0; background:#1a1a2e; border-bottom:1px solid #2a2a3e; padding:0 16px; overflow-x:auto; flex-wrap:wrap; }
+.nav-tab { padding:14px 20px; cursor:pointer; font-size:14px; color:#888; border-bottom:2px solid transparent; transition:all .2s; white-space:nowrap; flex-shrink:0; }
+.nav-tab:hover { color:#ccc; }
+.nav-tab.active { color:#00d4ff; border-bottom-color:#00d4ff; }
+
+/* Layout */
+.container { max-width:1200px; margin:0 auto; padding:20px; }
+.page { display:none; }
+.page.active { display:block; }
+
+/* Cards */
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:24px; }
+.card { background:#1a1a2e; border-radius:12px; padding:20px; border:1px solid #2a2a3e; }
+.card-label { font-size:12px; color:#666; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
+.card-value { font-size:28px; font-weight:700; color:#00d4ff; }
+.card-sub { font-size:13px; color:#888; margin-top:4px; }
+
+/* Tables */
+table { width:100%; border-collapse:collapse; margin-top:16px; }
+th { text-align:left; padding:10px 12px; color:#666; font-size:12px; text-transform:uppercase; letter-spacing:1px; border-bottom:1px solid #2a2a3e; }
+td { padding:10px 12px; border-bottom:1px solid #1a1a2e; font-size:14px; }
+tr:hover { background:#1a1a2e; }
+
+/* Badges */
+.badge { display:inline-block; padding:2px 10px; border-radius:12px; font-size:12px; font-weight:600; }
+.badge-won { background:#05966920; color:#059669; }
+.badge-lost { background:#ef444420; color:#ef4444; }
+.badge-open { background:#f59e0b20; color:#f59e0b; }
+.badge-expired { background:#94a3b820; color:#94a3b8; }
+.badge-high { background:#05966920; color:#059669; }
+.badge-medium { background:#f59e0b20; color:#f59e0b; }
+.badge-low { background:#ef444420; color:#ef4444; }
+
+/* Select */
+select { background:#1a1a2e; color:#e0e0e0; border:1px solid #2a2a3e; padding:8px 12px; border-radius:8px; font-size:14px; margin-bottom:16px; }
+
+/* Indicator grid */
+.ind-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; }
+.ind-card { background:#1a1a2e; border-radius:12px; padding:16px; border:1px solid #2a2a3e; }
+.ind-title { font-size:14px; font-weight:600; color:#00d4ff; margin-bottom:10px; }
+.ind-row { display:flex; justify-content:space-between; padding:4px 0; font-size:13px; }
+.ind-row .label { color:#888; }
+.ind-row .value { color:#e0e0e0; font-weight:500; }
+.bullish { color:#059669; }
+.bearish { color:#ef4444; }
+.neutral { color:#f59e0b; }
+
+/* Empty state */
+.prox-in { color:#059669; font-weight:700; }
+.prox-near { color:#f59e0b; font-weight:600; }
+.prox-far { color:#888; }
+.prox-above { color:#ef4444; }
+.change-pos { color:#059669; }
+.change-neg { color:#ef4444; }
+.change-flat { color:#888; }
+button.wl-filter { background:#1a1a2e; color:#888; border:1px solid #2a2a3e; padding:6px 14px; border-radius:8px; font-size:13px; cursor:pointer; transition:all .2s; }
+button.wl-filter:hover { color:#ccc; border-color:#444; }
+button.wl-filter.active { color:#00d4ff; border-color:#00d4ff; background:#00d4ff15; }
+.empty { text-align:center; padding:60px 20px; color:#555; }
+.empty h3 { color:#888; margin-bottom:8px; }
+
+/* Header */
+.header { padding:16px 0; margin-bottom:8px; }
+.header h1 { font-size:20px; color:#e0e0e0; font-weight:600; }
+.header span { font-size:13px; color:#555; }
+
+/* Sortable columns */
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: #ccc; }
+th.sort-asc::after { content: " ▲"; color: #00d4ff; }
+th.sort-desc::after { content: " ▼"; color: #00d4ff; }
+
+/* Table scroll wrapper */
+.table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+
+/* Responsive */
+@media(max-width:600px) {
+  .cards { grid-template-columns:1fr 1fr; }
+  .ind-grid { grid-template-columns:1fr; }
+  .nav-tab { padding:12px 14px; font-size:13px; }
+}
+@media(max-width:480px) {
+  .cards { grid-template-columns:1fr 1fr; }
+}
+@media(max-width:768px) {
+  td, th { font-size:12px; padding:8px 8px; }
+  .container { padding:12px; }
+  #wlTable td:first-child, #wlTable th:first-child {
+    position:sticky; left:0; background:#0f0f0f; z-index:1;
+  }
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-tab active" data-page="overview">Overview</div>
+  <div class="nav-tab" data-page="technical">Technical</div>
+  <div class="nav-tab" data-page="suggestions">Suggestions</div>
+  <div class="nav-tab" data-page="watchlist">Watchlist</div>
+  <div class="nav-tab" data-page="portfolio">Portfolio</div>
+</nav>
+
+<div class="container">
+  <div class="header">
+    <h1>📊 Portfolio Analyzer</h1>
+    <span id="lastUpdate"></span>
+  </div>
+
+  <!-- OVERVIEW -->
+  <div class="page active" id="page-overview">
+    <div class="cards" id="overviewCards"></div>
+    <h3 style="margin-bottom:12px; color:#888; font-size:14px;">Analyzed Stocks</h3>
+    <div id="stockList" class="table-wrap"></div>
+  </div>
+
+  <!-- TECHNICAL -->
+  <div class="page" id="page-technical">
+    <select id="stockSelect"><option value="">Select a stock...</option></select>
+    <div id="techDetail"></div>
+  </div>
+
+  <!-- SUGGESTIONS -->
+  <div class="page" id="page-suggestions">
+    <div class="cards" id="suggestionsCards"></div>
+    <h3 style="margin-bottom:12px; color:#888; font-size:14px;">By Confidence</h3>
+    <div class="table-wrap"><table id="confTable"><thead><tr><th>Tier</th><th>Total</th><th>Won</th><th>Lost</th><th>Win Rate</th><th>Avg P&L</th></tr></thead><tbody></tbody></table></div>
+    <h3 style="margin:20px 0 12px; color:#888; font-size:14px;">All Suggestions</h3>
+    <div class="table-wrap"><table id="sugTable"><thead><tr><th>Date</th><th>Symbol</th><th>Action</th><th>Confidence</th><th>Score</th><th>Status</th><th>P&L</th></tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <!-- WATCHLIST -->
+  <div class="page" id="page-watchlist">
+    <div class="cards" id="watchlistCards"></div>
+    <div style="margin-bottom:12px; display:flex; gap:8px; align-items:center;">
+      <h3 style="color:#888; font-size:14px; margin-right:12px;">Watchlist</h3>
+      <button class="wl-filter active" data-market="all">All</button>
+      <button class="wl-filter" data-market="IN">🇮🇳 India</button>
+      <button class="wl-filter" data-market="US">🇺🇸 US</button>
+    </div>
+    <div class="table-wrap"><table id="wlTable"><thead><tr><th>Symbol</th><th>Now</th><th>Since Add</th><th>Entry Zone</th><th>Proximity</th><th>Score</th><th>Stop</th><th>Target</th><th>R:R</th></tr></thead><tbody></tbody></table></div>
+    <div id="wlEmpty" class="empty" style="display:none"><h3>📋 Watchlist</h3><p>No stocks on watchlist yet.</p></div>
+  </div>
+
+  <!-- PORTFOLIO -->
+  <div class="page" id="page-portfolio">
+    <div class="empty"><h3>💼 Portfolio</h3><p>Coming soon — import your portfolio to see holdings and P&L.</p></div>
+  </div>
+</div>
+
+<script>
+// Sortable tables
+const _sortState = {};
+
+function sortTable(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const state = _sortState[tableId];
+  if (!state) return;
+  const headers = table.querySelectorAll('thead th');
+  headers.forEach((th, i) => {
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (i === state.col) th.classList.add(state.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+  });
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  rows.sort((a, b) => {
+    const aCell = a.querySelectorAll('td')[state.col];
+    const bCell = b.querySelectorAll('td')[state.col];
+    const aText = aCell ? aCell.textContent.trim() : '';
+    const bText = bCell ? bCell.textContent.trim() : '';
+    if (aText.match(/^\d{4}-\d{2}-\d{2}/) && bText.match(/^\d{4}-\d{2}-\d{2}/)) {
+      const d = new Date(aText) - new Date(bText);
+      return state.dir === 'asc' ? d : -d;
+    }
+    const aNum = parseFloat(aText.replace(/[₹$%,]/g, ''));
+    const bNum = parseFloat(bText.replace(/[₹$%,]/g, ''));
+    if (!isNaN(aNum) && !isNaN(bNum)) return state.dir === 'asc' ? aNum - bNum : bNum - aNum;
+    return state.dir === 'asc' ? aText.localeCompare(bText) : bText.localeCompare(aText);
+  });
+  rows.forEach(row => tbody.appendChild(row));
+}
+
+function makeSortable(tableId, defaultCol, defaultDir) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  if (!_sortState[tableId]) _sortState[tableId] = { col: defaultCol, dir: defaultDir };
+  const headers = table.querySelectorAll('thead th');
+  headers.forEach((th, i) => {
+    th.classList.add('sortable');
+    const fresh = th.cloneNode(true);
+    th.parentNode.replaceChild(fresh, th);
+  });
+  table.querySelectorAll('thead th').forEach((th, i) => {
+    th.classList.add('sortable');
+    th.addEventListener('click', () => {
+      const state = _sortState[tableId];
+      if (state.col === i) { state.dir = state.dir === 'asc' ? 'desc' : 'asc'; }
+      else { state.col = i; state.dir = 'asc'; }
+      sortTable(tableId);
+    });
+  });
+  sortTable(tableId);
+}
+
+// Navigation
+document.querySelectorAll('.nav-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('page-' + tab.dataset.page).classList.add('active');
+  });
+});
+
+// Fetch helpers — 2-mode: live API (local) or baked data (GitHub Pages)
+const BAKED = window.BAKED_DATA || null;
+const get = BAKED ? async (url) => {
+  if (url === '/api/technical') return BAKED.technical || [];
+  if (url.startsWith('/api/technical/')) {
+    const sym = url.split('/').pop();
+    return BAKED.technical?.find(s => s.symbol === sym) || null;
+  }
+  if (url.startsWith('/api/ta/')) {
+    const sym = decodeURIComponent(url.split('/').pop());
+    return { symbol: sym, indicators: BAKED.ta?.[sym] || {} };
+  }
+  if (url === '/api/suggestions/stats') return BAKED.suggestionStats || {};
+  if (url === '/api/suggestions') return BAKED.suggestions || [];
+  if (url === '/api/suggestions/outcomes') return BAKED.suggestionOutcomes || [];
+  if (url === '/api/watchlists') return BAKED.watchlists || [];
+  if (url.startsWith('/api/prices')) return {}; // no live prices in static mode
+  return null;
+} : url => fetch(url).then(r => r.json()).catch(() => null);
+
+// ── Technical Tab ────────────────────────────────────────────────────────────
+
+const INDICATOR_META = {
+  rsi: {
+    name: "RSI (Relative Strength Index)",
+    what: "Measures momentum — how overbought or oversold a stock is.",
+    range: [0, 100],
+    zones: [{min:0,max:30,label:"Oversold",color:"#059669"},{min:30,max:70,label:"Neutral",color:"#f59e0b"},{min:70,max:100,label:"Overbought",color:"#ef4444"}],
+    valueKey: "rsi"
+  },
+  stoch_rsi: {
+    name: "Stochastic RSI",
+    what: "Faster momentum oscillator. K crossing above D = bullish signal. Below 20 = oversold entry zone.",
+    range: [0, 100],
+    zones: [{min:0,max:20,label:"Oversold",color:"#059669"},{min:20,max:80,label:"Neutral",color:"#f59e0b"},{min:80,max:100,label:"Overbought",color:"#ef4444"}],
+    valueKey: "stoch_rsi_k"
+  },
+  macd: {
+    name: "MACD",
+    what: "Trend-following momentum. MACD above signal line = bullish. Histogram rising = strengthening momentum.",
+    range: null,
+    valueKey: "macd"
+  },
+  divergence: {
+    name: "Divergence (RSI + MACD)",
+    what: "Bullish divergence: price makes lower low but RSI/MACD makes higher low — reversal signal. Bearish is opposite.",
+    range: null,
+    valueKey: null
+  },
+  patterns: {
+    name: "Chart Patterns",
+    what: "Price action patterns: Double Top/Bottom, Head & Shoulders, Bull/Bear Flags. Each has a trade implication.",
+    range: null,
+    valueKey: null
+  },
+  bollinger: {
+    name: "Bollinger Bands",
+    what: "Price channel ±2 std deviations from 20-day SMA. Price near lower band = potential buy. Near upper = potential sell.",
+    range: null,
+    valueKey: "percent_b"
+  },
+  adx: {
+    name: "ADX (Trend Strength)",
+    what: "Measures how strong the trend is, regardless of direction. >25 = strong trend. <20 = weak/ranging.",
+    range: [0, 100],
+    zones: [{min:0,max:20,label:"Weak",color:"#94a3b8"},{min:20,max:25,label:"Developing",color:"#f59e0b"},{min:25,max:100,label:"Strong",color:"#059669"}],
+    valueKey: "adx"
+  },
+  volume: {
+    name: "Volume Analysis",
+    what: "Compares current volume to 20-day average. High volume confirms price moves. Low volume = weak signal.",
+    range: null,
+    valueKey: "volume_ratio"
+  },
+  sma_stack: {
+    name: "SMA Stack",
+    what: "Price vs 20/50/200-day moving averages. Price above all 3 SMAs = strong uptrend (Golden Stack).",
+    range: null,
+    valueKey: null
+  }
+};
+
+function renderTechIndicator(name, data, meta) {
+  const signalColor = data.signal === "bullish" ? "#059669" : data.signal === "bearish" ? "#ef4444" : "#f59e0b";
+  const signalBg    = data.signal === "bullish" ? "#05966920" : data.signal === "bearish" ? "#ef444420" : "#f59e0b20";
+
+  // Range bar
+  let rangeBar = "";
+  if (meta?.range && meta?.valueKey && data[meta.valueKey] != null) {
+    const val = parseFloat(data[meta.valueKey]);
+    const [min, max] = meta.range;
+    const pct = Math.min(100, Math.max(0, (val - min) / (max - min) * 100));
+    const zoneSegments = (meta.zones || []).map(z => {
+      const zPct = (z.max - z.min) / (max - min) * 100;
+      return `<div style="flex:${zPct};background:${z.color}20;border-right:1px solid #0f0f0f;position:relative">
+        <span style="position:absolute;bottom:-16px;left:0;font-size:9px;color:#555;white-space:nowrap">${z.label}</span>
+      </div>`;
+    }).join("");
+    rangeBar = `
+      <div style="margin:10px 0 20px">
+        <div style="display:flex;height:8px;border-radius:4px;overflow:hidden;position:relative">${zoneSegments}</div>
+        <div style="position:relative;height:4px;margin-top:2px">
+          <div style="position:absolute;left:${pct}%;transform:translateX(-50%);width:2px;height:12px;background:#00d4ff;border-radius:2px;top:-10px"></div>
+        </div>
+        <div style="text-align:center;margin-top:8px;font-size:11px;color:#888">Value: <span style="color:#e0e0e0;font-weight:600">${val.toFixed(1)}</span></div>
+      </div>`;
+  }
+
+  // Key-value rows (skip metadata/nested fields)
+  const skipKeys = ["symbol","indicator","timestamp","params","thresholds","interpretation","signal","signal_strength","entry_signal","patterns","bullish_divergence","bearish_divergence"];
+  const kvRows = Object.entries(data)
+    .filter(([k]) => !skipKeys.includes(k) && typeof data[k] !== "object")
+    .map(([k, v]) => {
+      const label = k.replace(/_/g, " ");
+      const numV = parseFloat(v);
+      const display = !isNaN(numV) ? numV.toFixed(2) : String(v);
+      const cls = String(v).toLowerCase().includes("bull") ? "bullish" : String(v).toLowerCase().includes("bear") ? "bearish" : "";
+      return `<div class="ind-row"><span class="label">${label}</span><span class="value ${cls}">${display}</span></div>`;
+    }).join("");
+
+  // Patterns special rendering
+  let patternsHtml = "";
+  if (name === "patterns" && data.patterns) {
+    const patList = Array.isArray(data.patterns) ? data.patterns : [];
+    if (patList.length === 0) {
+      patternsHtml = `<div style="color:#555;font-size:13px;padding:8px 0">No patterns detected</div>`;
+    } else {
+      patternsHtml = patList.map(p => {
+        const isBull = p.type === "bullish" || (p.name||"").toLowerCase().includes("bottom") || (p.name||"").toLowerCase().includes("inverse") || (p.name||"").toLowerCase().includes("bull");
+        const col = isBull ? "#059669" : "#ef4444";
+        return `<div style="background:${col}15;border:1px solid ${col}30;border-radius:8px;padding:10px;margin-bottom:8px">
+          <div style="font-weight:600;color:${col};font-size:13px">${isBull?"🟢":"🔴"} ${p.name}</div>
+          <div style="font-size:12px;color:#aaa;margin-top:4px">${p.description || ""}</div>
+          <div style="font-size:12px;color:#888;margin-top:4px;font-style:italic">${p.trade_implication || ""}</div>
+        </div>`;
+      }).join("");
+    }
+  }
+
+  // Divergence special rendering
+  let divHtml = "";
+  if (name === "divergence") {
+    const bullDiv = data.bullish_divergence?.detected;
+    const bearDiv = data.bearish_divergence?.detected;
+    divHtml = `
+      <div style="display:flex;gap:10px;margin-bottom:12px">
+        <div style="flex:1;background:${bullDiv?"#05966920":"#1a1a2e"};border:1px solid ${bullDiv?"#059669":"#2a2a3e"};border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:18px">${bullDiv?"🟢":"⚪"}</div>
+          <div style="font-size:12px;color:${bullDiv?"#059669":"#555"};font-weight:600;margin-top:4px">Bullish Div</div>
+          <div style="font-size:11px;color:#666">${bullDiv?"DETECTED":"none"}</div>
+        </div>
+        <div style="flex:1;background:${bearDiv?"#ef444420":"#1a1a2e"};border:1px solid ${bearDiv?"#ef4444":"#2a2a3e"};border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:18px">${bearDiv?"🔴":"⚪"}</div>
+          <div style="font-size:12px;color:${bearDiv?"#ef4444":"#555"};font-weight:600;margin-top:4px">Bearish Div</div>
+          <div style="font-size:11px;color:#666">${bearDiv?"DETECTED":"none"}</div>
+        </div>
+      </div>`;
+  }
+
+  return `<div class="ind-card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+      <div class="ind-title" style="margin-bottom:0">${meta?.name || name.toUpperCase()}</div>
+      ${data.signal ? `<span style="background:${signalBg};color:${signalColor};padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700;text-transform:uppercase">${data.signal}</span>` : ""}
+    </div>
+    ${meta?.what ? `<div style="font-size:12px;color:#666;margin-bottom:10px;line-height:1.4">${meta.what}</div>` : ""}
+    ${rangeBar}
+    ${patternsHtml}
+    ${divHtml}
+    ${kvRows}
+    ${data.interpretation ? `<div style="margin-top:10px;padding:8px;background:#00d4ff08;border-left:2px solid #00d4ff40;font-size:12px;color:#aaa;border-radius:0 4px 4px 0">${data.interpretation}</div>` : ""}
+  </div>`;
+}
+
+// Load overview
+async function loadOverview() {
+  const [stocks, stats] = await Promise.all([get('/api/technical'), get('/api/suggestions/stats')]);
+  const cards = document.getElementById('overviewCards');
+  cards.innerHTML = `
+    <div class="card"><div class="card-label">Stocks Analyzed</div><div class="card-value">${stocks?.length || 0}</div></div>
+    <div class="card"><div class="card-label">Suggestions</div><div class="card-value">${stats?.total || 0}</div><div class="card-sub">${stats?.open || 0} open</div></div>
+    <div class="card"><div class="card-label">Win Rate</div><div class="card-value">${stats?.winRate || 0}%</div><div class="card-sub">${stats?.won || 0}W / ${stats?.lost || 0}L</div></div>
+    <div class="card"><div class="card-label">Avg P&L</div><div class="card-value">${stats?.avgPnl > 0 ? '+' : ''}${stats?.avgPnl || 0}%</div></div>
+  `;
+  
+  const list = document.getElementById('stockList');
+  if (!stocks?.length) { list.innerHTML = '<div class="empty"><p>No stocks analyzed yet. Run a technical analysis to see data here.</p></div>'; return; }
+  let html = '<table id="ovTable"><thead><tr><th>Symbol</th><th>Score</th><th>Signal</th></tr></thead><tbody>';
+  for (const s of stocks) {
+    const score = s.technical_score ?? s.score ?? '—';
+    const signal = s.recommendation ?? s.signal ?? '—';
+    html += `<tr><td style="font-weight:600">${s.symbol}</td><td>${score}</td><td>${signal}</td></tr>`;
+  }
+  html += '</tbody></table>';
+  list.innerHTML = html;
+  makeSortable('ovTable', 1, 'desc');
+}
+
+// Load technical detail
+async function loadTechnical() {
+  const stocks = await get('/api/technical');
+  const sel = document.getElementById('stockSelect');
+  sel.innerHTML = '<option value="">Select a stock...</option>';
+  if (stocks) for (const s of stocks) {
+    sel.innerHTML += `<option value="${s.symbol}">${s.symbol}</option>`;
+  }
+}
+
+document.getElementById('stockSelect').addEventListener('change', async function() {
+  const sym = this.value;
+  const detail = document.getElementById('techDetail');
+  if (!sym) { detail.innerHTML = ''; return; }
+
+  detail.innerHTML = '<div style="color:#555;padding:20px">Loading…</div>';
+  const [ta, indicators] = await Promise.all([get(`/api/technical/${sym}`), get(`/api/ta/${sym}`)]);
+
+  // Build summary header
+  let summaryHtml = '';
+  if (indicators?.indicators) {
+    const inds = indicators.indicators;
+    let bullCount = 0, bearCount = 0, entrySignal = '';
+    for (const [, d] of Object.entries(inds)) {
+      if (d.signal === 'bullish') bullCount++;
+      else if (d.signal === 'bearish') bearCount++;
+      if (d.entry_signal) entrySignal = d.entry_signal;
+    }
+    const bias = bullCount > bearCount ? 'bullish' : bearCount > bullCount ? 'bearish' : 'neutral';
+    const biasColor = bias === 'bullish' ? '#059669' : bias === 'bearish' ? '#ef4444' : '#f59e0b';
+    const price = ta?.close ?? ta?.price ?? null;
+    const score = ta?.technical_score ?? ta?.score ?? null;
+
+    summaryHtml = `
+      <div style="background:#1a1a2e;border:1px solid #2a2a3e;border-radius:12px;padding:16px 20px;margin-bottom:20px;display:flex;flex-wrap:wrap;gap:24px;align-items:center">
+        <div>
+          <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1px">Symbol</div>
+          <div style="font-size:22px;font-weight:700;color:#e0e0e0">${sym}</div>
+        </div>
+        ${price != null ? `<div>
+          <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1px">Price</div>
+          <div style="font-size:22px;font-weight:700;color:#00d4ff">${parseFloat(price).toFixed(2)}</div>
+        </div>` : ''}
+        <div>
+          <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1px">Overall Bias</div>
+          <div style="font-size:18px;font-weight:700;color:${biasColor};text-transform:uppercase">${bias}</div>
+          <div style="font-size:12px;color:#555;margin-top:2px">🟢 ${bullCount} bullish · 🔴 ${bearCount} bearish</div>
+        </div>
+        ${score != null ? `<div>
+          <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1px">TA Score</div>
+          <div style="font-size:22px;font-weight:700;color:#e0e0e0">${score}</div>
+        </div>` : ''}
+        ${entrySignal ? `<div style="margin-left:auto;background:#00d4ff15;border:1px solid #00d4ff40;border-radius:8px;padding:8px 14px">
+          <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1px">Entry Signal</div>
+          <div style="font-size:14px;font-weight:600;color:#00d4ff">${entrySignal}</div>
+        </div>` : ''}
+      </div>`;
+  }
+
+  // Build indicator grid
+  let gridHtml = '<div class="ind-grid">';
+  if (indicators?.indicators) {
+    for (const [name, data] of Object.entries(indicators.indicators)) {
+      if (typeof data !== 'object' || data === null) continue;
+      gridHtml += renderTechIndicator(name, data, INDICATOR_META[name]);
+    }
+  }
+  // Summary card from /api/technical/:sym (score breakdown etc.)
+  if (ta) {
+    const skipTa = new Set(['symbol','close','price','technical_score','score','indicators']);
+    const taRows = Object.entries(ta)
+      .filter(([k]) => !skipTa.has(k) && typeof ta[k] !== 'object')
+      .map(([k, v]) => `<div class="ind-row"><span class="label">${k.replace(/_/g,' ')}</span><span class="value">${typeof v === 'number' ? v.toFixed(2) : v}</span></div>`)
+      .join('');
+    if (taRows) {
+      gridHtml += `<div class="ind-card"><div class="ind-title" style="margin-bottom:10px">SUMMARY</div>${taRows}</div>`;
+    }
+  }
+  gridHtml += '</div>';
+
+  detail.innerHTML = summaryHtml + gridHtml;
+});
+
+// Load suggestions
+async function loadSuggestions() {
+  const [stats, suggestions, outcomes] = await Promise.all([
+    get('/api/suggestions/stats'), get('/api/suggestions'), get('/api/suggestions/outcomes')
+  ]);
+  
+  const cards = document.getElementById('suggestionsCards');
+  cards.innerHTML = `
+    <div class="card"><div class="card-label">Total</div><div class="card-value">${stats?.total || 0}</div></div>
+    <div class="card"><div class="card-label">Win Rate</div><div class="card-value">${stats?.winRate || 0}%</div></div>
+    <div class="card"><div class="card-label">Won / Lost</div><div class="card-value" style="color:#059669">${stats?.won || 0}<span style="color:#666"> / </span><span style="color:#ef4444">${stats?.lost || 0}</span></div></div>
+    <div class="card"><div class="card-label">Avg P&L</div><div class="card-value">${(stats?.avgPnl || 0) > 0 ? '+' : ''}${stats?.avgPnl || 0}%</div></div>
+  `;
+  
+  // Confidence table
+  const confBody = document.querySelector('#confTable tbody');
+  confBody.innerHTML = '';
+  if (stats?.byConfidence) {
+    for (const [tier, d] of Object.entries(stats.byConfidence)) {
+      confBody.innerHTML += `<tr>
+        <td><span class="badge badge-${tier.toLowerCase()}">${tier}</span></td>
+        <td>${d.total}</td><td>${d.won}</td><td>${d.lost}</td>
+        <td>${d.winRate.toFixed(1)}%</td><td>${d.avgPnl > 0 ? '+' : ''}${d.avgPnl.toFixed(2)}%</td>
+      </tr>`;
+    }
+  }
+  
+  // All suggestions
+  const outcomeMap = {};
+  if (outcomes) for (const o of outcomes) outcomeMap[o.suggestion_id] = o;
+  
+  const sugBody = document.querySelector('#sugTable tbody');
+  sugBody.innerHTML = '';
+  if (!suggestions?.length) { sugBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#555">No suggestions yet</td></tr>'; return; }
+  for (const s of suggestions.slice().reverse()) {
+    const o = outcomeMap[s.id];
+    const status = o?.status || 'open';
+    const pnl = o?.pnl_pct != null ? `${o.pnl_pct > 0 ? '+' : ''}${o.pnl_pct.toFixed(1)}%` : '—';
+    sugBody.innerHTML += `<tr>
+      <td>${s.ts?.slice(0,10) || '—'}</td>
+      <td style="font-weight:600">${s.symbol}</td>
+      <td>${s.action}</td>
+      <td><span class="badge badge-${(s.confidence||'').toLowerCase()}">${s.confidence}</span></td>
+      <td>${s.score}</td>
+      <td><span class="badge badge-${status}">${status}</span></td>
+      <td>${pnl}</td>
+    </tr>`;
+  }
+  makeSortable('sugTable', 0, 'desc');
+}
+
+let wlMarketFilter = 'all';
+let wlAllStocks = [];
+
+document.querySelectorAll('.wl-filter').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.wl-filter').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    wlMarketFilter = btn.dataset.market;
+    renderWatchlist();
+  });
+});
+
+let wlPrices = {};
+
+async function fetchWatchlistPrices() {
+  const active = wlAllStocks.filter(s => s.status !== 'REMOVED');
+  if (!active.length) return;
+  // Map tickers to yfinance symbols
+  const symMap = {};
+  for (const s of active) {
+    const yf = s.market === 'IN' ? s.ticker + '.NS' : s.ticker;
+    symMap[s.ticker] = yf;
+  }
+  const yfSymbols = Object.values(symMap).join(',');
+  const data = await get('/api/prices?symbols=' + yfSymbols);
+  if (data) {
+    for (const [ticker, yf] of Object.entries(symMap)) {
+      if (data[yf]) wlPrices[ticker] = data[yf];
+    }
+  }
+  renderWatchlist();
+}
+
+function renderWatchlist() {
+  const active = wlAllStocks.filter(s => s.status !== 'REMOVED');
+  const filtered = wlMarketFilter === 'all' ? active : active.filter(s => s.market === wlMarketFilter);
+  const tbody = document.querySelector('#wlTable tbody');
+  const empty = document.getElementById('wlEmpty');
+  
+  if (!filtered.length) { empty.style.display = 'block'; document.getElementById('wlTable').style.display = 'none'; return; }
+  empty.style.display = 'none';
+  document.getElementById('wlTable').style.display = '';
+  
+  tbody.innerHTML = '';
+  for (const s of filtered.sort((a,b) => {
+    // Sort by proximity to entry zone (in-zone first, then nearest)
+    const pa = getProximity(a);
+    const pb = getProximity(b);
+    return pa.sortOrder - pb.sortOrder;
+  })) {
+    const curr = s.entry_zone?.currency === 'INR' ? '₹' : '$';
+    const ez = s.entry_zone ? `${curr}${s.entry_zone.low}–${s.entry_zone.high}` : '—';
+    const p = wlPrices[s.ticker];
+    const now = p ? `${curr}${p.price}` : '—';
+    const changeSinceAdd = p && s.price_at_add ? ((p.price - s.price_at_add) / s.price_at_add * 100) : null;
+    const changeClass = changeSinceAdd > 0 ? 'change-pos' : changeSinceAdd < 0 ? 'change-neg' : 'change-flat';
+    const changeStr = changeSinceAdd !== null ? `<span class="${changeClass}">${changeSinceAdd > 0 ? '+' : ''}${changeSinceAdd.toFixed(1)}%</span>` : '—';
+    
+    const prox = getProximity(s);
+    const stopDist = p && s.stop_loss ? ((s.stop_loss - p.price) / p.price * 100).toFixed(1) : null;
+    const targetDist = p && s.target ? ((s.target - p.price) / p.price * 100).toFixed(1) : null;
+    const rr = stopDist && targetDist ? (Math.abs(parseFloat(targetDist)) / Math.abs(parseFloat(stopDist))).toFixed(1) : '—';
+    
+    tbody.innerHTML += `<tr>
+      <td style="font-weight:600">${s.ticker}<br><span style="font-size:11px;color:#555">${s.market}</span></td>
+      <td>${now}${p ? `<br><span style="font-size:11px" class="${p.change_pct >= 0 ? 'change-pos' : 'change-neg'}">${p.change_pct >= 0 ? '+' : ''}${p.change_pct}% today</span>` : ''}</td>
+      <td>${changeStr}</td>
+      <td>${ez}</td>
+      <td><span class="${prox.class}">${prox.label}</span></td>
+      <td>${s.score || '—'}</td>
+      <td>${curr}${s.stop_loss || '—'}${stopDist ? `<br><span style="font-size:11px;color:#888">${stopDist}%</span>` : ''}</td>
+      <td>${curr}${s.target || '—'}${targetDist ? `<br><span style="font-size:11px;color:#888">+${targetDist}%</span>` : ''}</td>
+      <td>${rr !== '—' ? rr + ':1' : '—'}</td>
+    </tr>`;
+  }
+  makeSortable('wlTable', 4, 'asc');
+}
+
+function getProximity(s) {
+  const p = wlPrices[s.ticker];
+  if (!p || !s.entry_zone) return { label: '—', class: 'prox-far', sortOrder: 99 };
+  const price = p.price;
+  const low = s.entry_zone.low;
+  const high = s.entry_zone.high;
+  
+  if (price >= low && price <= high) {
+    return { label: '🎯 IN ZONE', class: 'prox-in', sortOrder: 0 };
+  }
+  if (price < low) {
+    const pct = ((low - price) / price * 100).toFixed(1);
+    return { label: `${pct}% below`, class: 'prox-in', sortOrder: 1 };
+  }
+  const pctAbove = ((price - high) / high * 100).toFixed(1);
+  if (pctAbove <= 5) {
+    return { label: `${pctAbove}% above`, class: 'prox-near', sortOrder: 2 + parseFloat(pctAbove) };
+  }
+  return { label: `${pctAbove}% above`, class: 'prox-above', sortOrder: 10 + parseFloat(pctAbove) };
+}
+
+// Load watchlist
+async function loadWatchlist() {
+  const data = await get('/api/watchlists');
+  const cards = document.getElementById('watchlistCards');
+  const tbody = document.querySelector('#wlTable tbody');
+  const empty = document.getElementById('wlEmpty');
+  
+  wlAllStocks = [];
+  if (data) for (const wl of data) {
+    if (wl.data?.watchlist) wlAllStocks.push(...wl.data.watchlist);
+  }
+  
+  const active = wlAllStocks.filter(s => s.status !== 'REMOVED');
+  const removed = wlAllStocks.filter(s => s.status === 'REMOVED');
+  const india = active.filter(s => s.market === 'IN');
+  const us = active.filter(s => s.market === 'US');
+  
+  cards.innerHTML = `
+    <div class="card"><div class="card-label">Watching</div><div class="card-value">${active.length}</div></div>
+    <div class="card"><div class="card-label">🇮🇳 India</div><div class="card-value">${india.length}</div></div>
+    <div class="card"><div class="card-label">🇺🇸 US</div><div class="card-value">${us.length}</div></div>
+    <div class="card"><div class="card-label">Avg Score</div><div class="card-value">${active.length ? (active.reduce((s,x) => s + (x.score||0), 0) / active.length).toFixed(1) : '—'}</div></div>
+  `;
+  
+  renderWatchlist();
+  fetchWatchlistPrices();
+}
+
+// SSE — live mode only (no-op in static/baked mode)
+if (!BAKED) {
+  const evtSource = new EventSource('/api/events');
+  evtSource.onmessage = () => {
+    loadOverview(); loadSuggestions(); loadWatchlist();
+    document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+  };
+} else {
+  // Show baked timestamp in static mode
+  const bakedAt = new Date(BAKED.bakedAt);
+  document.getElementById('lastUpdate').textContent = '📦 Snapshot: ' + bakedAt.toLocaleDateString('en-IN', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+}
+
+// Init
+loadOverview();
+loadTechnical();
+loadSuggestions();
+loadWatchlist();
+document.getElementById('lastUpdate').textContent = 'Loaded: ' + new Date().toLocaleTimeString();
+</script>
+</body>
+</html>

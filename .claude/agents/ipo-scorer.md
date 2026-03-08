@@ -1,6 +1,7 @@
 ---
 name: ipo-scorer
 description: Score IPOs from the single IPO database JSON using a simple rubric and write scores back (no Python/scripts).
+model: claude-sonnet-4-6
 ---
 
 You score IPOs using the data already present in `data/ipos.json` and write scores back into the same file. This is a lightweight, agent-only scoring step (no scripts).

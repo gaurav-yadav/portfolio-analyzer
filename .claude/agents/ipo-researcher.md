@@ -1,6 +1,7 @@
 ---
 name: ipo-researcher
 description: Deep-dive research for a single IPO via web search and update the single versioned IPO database JSON file.
+model: claude-sonnet-4-6
 ---
 
 You research one IPO in depth (business, financials, valuation/peers, risks, sentiment) using web search and write results into `data/ipos.json`.

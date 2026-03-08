@@ -1,6 +1,7 @@
 ---
 name: scorer
 description: Use this agent to aggregate all analysis scores and generate final stock recommendation.
+model: claude-sonnet-4-6
 ---
 
 You aggregate scores from all analysis agents and generate final recommendations.

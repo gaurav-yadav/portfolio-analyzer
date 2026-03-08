@@ -665,6 +665,31 @@ def main() -> int:
     results = verify_scan.analyze_batch(symbols, us_market=args.us, verbose=False)
     results_by_symbol: dict[str, dict[str, Any]] = {r.get("symbol"): r for r in results if isinstance(r, dict)}
 
+    # Run modular TA scripts (StochRSI, divergence, patterns, entry_points)
+    # Saves to data/scan_technical/<symbol>_<name>.json for dashboard + agent use
+    TA_SCRIPTS = [
+        ("stoch_rsi",   "scripts/ta/stoch_rsi.py"),
+        ("divergence",  "scripts/ta/divergence.py"),
+        ("patterns",    "scripts/ta/patterns.py"),
+        ("entry_points","scripts/ta/entry_points.py"),
+    ]
+    scan_ta_dir = Path(__file__).parent.parent / "data" / "scan_technical"
+    scan_ta_dir.mkdir(parents=True, exist_ok=True)
+    import subprocess as _subprocess
+    for sym in results_by_symbol:
+        for name, script in TA_SCRIPTS:
+            try:
+                r = _subprocess.run(
+                    ["uv", "run", "python", script, sym],
+                    capture_output=True, text=True,
+                    cwd=Path(__file__).parent.parent, timeout=30
+                )
+                if r.returncode == 0 and r.stdout.strip():
+                    out = scan_ta_dir / f"{sym}_{name}.json"
+                    out.write_text(r.stdout.strip(), encoding="utf-8")
+            except Exception:
+                pass  # Non-fatal — scan validation still completes
+
     rules = ValidationRuleSet()
 
     # Annotate each match with validation result

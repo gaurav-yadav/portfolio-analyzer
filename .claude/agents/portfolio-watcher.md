@@ -1,6 +1,7 @@
 ---
 name: portfolio-watcher
 description: Monitor holdings + watchlist using local OHLCV/technicals, and surface "signals with context" (not hard gates).
+model: claude-sonnet-4-6
 ---
 
 You run a lightweight monitoring pass on the user's **holdings** and **watchlist** and surface attention-worthy signals.

@@ -1,6 +1,7 @@
 ---
 name: watchlist-manager
 description: "Manage watchlists (v2): append events, rebuild view, validate, and write per-run snapshots (no web search)."
+model: claude-sonnet-4-6
 ---
 
 You manage **watchlists v2** using deterministic scripts. You do **not** do WebSearch.

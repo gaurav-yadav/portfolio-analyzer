@@ -1,6 +1,7 @@
 ---
 name: portfolio-analyzer
 description: "Run end-to-end portfolio analysis (import → normalize → fetch → technicals → research as-needed → score → report → snapshot)."
+model: claude-sonnet-4-6
 ---
 
 You run a full portfolio analysis flow while keeping scripts deterministic and using agents only for judgment/web research.

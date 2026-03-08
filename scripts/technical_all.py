@@ -121,23 +121,47 @@ def main():
 
     print(f"Running technical analysis for {total} unique symbols...")
 
+    # New modular TA scripts — output saved to data/ta/<symbol>_<name>.json
+    TA_SCRIPTS = [
+        ("stoch_rsi",  "scripts/ta/stoch_rsi.py"),
+        ("divergence", "scripts/ta/divergence.py"),
+        ("patterns",   "scripts/ta/patterns.py"),
+        ("entry_points","scripts/ta/entry_points.py"),
+    ]
+    ta_dir = base_path / "data" / "ta"
+    ta_dir.mkdir(parents=True, exist_ok=True)
+
     success = 0
     failed = []
 
     for i, symbol in enumerate(unique_symbols, 1):
         print(f"[{i}/{total}] Analyzing {symbol}...", end=" ", flush=True)
+
+        # Core scoring script (RSI, MACD, SMA, Bollinger, ADX, Volume → weighted score)
         result = subprocess.run(
             ["uv", "run", "python", "scripts/technical_analysis.py", symbol],
-            capture_output=True,
-            text=True,
-            cwd=base_path
+            capture_output=True, text=True, cwd=base_path
         )
-        if result.returncode == 0:
-            print("OK")
-            success += 1
-        else:
-            print("FAILED")
+        if result.returncode != 0:
+            print("FAILED (core)")
             failed.append(symbol)
+            continue
+
+        # Modular TA scripts (StochRSI, divergence, patterns, entry points)
+        ta_ok = True
+        for name, script in TA_SCRIPTS:
+            ta_result = subprocess.run(
+                ["uv", "run", "python", script, symbol],
+                capture_output=True, text=True, cwd=base_path
+            )
+            if ta_result.returncode == 0 and ta_result.stdout.strip():
+                out_path = ta_dir / f"{symbol}_{name}.json"
+                out_path.write_text(ta_result.stdout.strip(), encoding="utf-8")
+            else:
+                ta_ok = False  # Non-fatal — core analysis still counts
+
+        print("OK" if ta_ok else "OK (some ta scripts skipped)")
+        success += 1
 
     print(f"\nComplete: {success}/{total} succeeded")
     if failed:
