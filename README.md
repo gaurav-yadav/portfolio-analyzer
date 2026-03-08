@@ -14,13 +14,22 @@ A practical, opinionated toolkit for stock investors: run a quick check on your 
 - You want to **track how your analysis changes** between runs—what got added, removed, or flagged differently.
 - You're the **"tinker and extend" type** and want a working end-to-end setup you can fork and customize with your own rules.
 
+## Live Dashboard
+
+**[📊 gaurav-yadav.github.io/portfolio-analyzer](https://gaurav-yadav.github.io/portfolio-analyzer/)** — static snapshot, updated on every push.
+
+Run locally on port 3323 for live data with real-time price updates.
+
+---
+
 ## What You Get
 
 - A **ranked view of your holdings** with simple recommendations (BUY / HOLD / SELL) plus a confidence level, so you know what deserves attention.
-- **Technical analysis** across the core indicators (RSI, MACD, SMA trend, Bollinger context, ADX strength, volume confirmation).
+- **Full technical analysis suite**: RSI, MACD, SMA trend, Bollinger, ADX, Volume — plus **Stochastic RSI** (K/D crossovers), **bullish/bearish divergence** (RSI + MACD), **chart patterns** (Double Top/Bottom, Head & Shoulders, Bull/Bear Flags), and **entry point signals**.
 - **Lightweight fundamental and narrative context** pulled via AI web research (results, valuation, growth) so the output isn't just numbers.
 - **News + legal/corporate signals** rolled up into a "anything weird going on?" layer.
 - A **stock scanner** with OHLCV-validated confluence ranking (2-week breakout, 2-month pullback, support reversal setups).
+- **Suggestions ledger**: log trade calls with targets + confidence; resolve outcomes weekly; track win rate over time.
 - **Event-sourced watchlists**: record *what/why/entry/invalidation/timing/re-entry* for each pick, track outcomes with snapshots.
 - **Portfolio snapshots**: compare analysis runs over time—see what changed, what improved, what got worse.
 - **Report archiving**: automatically archive each analysis report with a date-stamped filename; compare to previous runs on demand.
@@ -79,9 +88,19 @@ analyze my portfolio from input/your_holdings.csv
 run stock scanner
 ```
 
-### Open Dashboard
+### Open Dashboard (Local)
 
-Open `dashboard/index.html` in your browser, then load your analysis CSV.
+```bash
+cd dashboard && npx tsx src/server.ts
+# Open http://localhost:3323
+```
+
+### Deploy Dashboard to GitHub Pages
+
+```bash
+uv run python scripts/bake_dashboard.py --push
+# Live at https://<yourname>.github.io/portfolio-analyzer
+```
 
 ---
 
@@ -333,8 +352,11 @@ See [docs/data-sources.md](docs/data-sources.md) for complete data flow.
 portfolio-analyzer/
 ├── input/                    # Put your CSV files here
 ├── output/                   # Analysis reports (CSV)
-├── dashboard/                # HTML dashboard (index.html)
+├── dashboard/                # Node.js dashboard (port 3323 locally, GitHub Pages publicly)
+│   ├── src/server.ts         # Express API server
+│   └── public/               # Static frontend (index.html, data.js)
 ├── scripts/                  # Python analysis scripts
+│   └── ta/                   # Modular TA: stoch_rsi, divergence, patterns, entry_points, …
 ├── utils/                    # Shared config and helpers
 ├── data/
 │   ├── holdings.json         # Parsed portfolio
@@ -345,11 +367,12 @@ portfolio-analyzer/
 │   ├── legal/                # Legal signals
 │   ├── scores/               # Final scores
 │   ├── scans/                # Scanner results
-│   ├── watchlists/           # Event-sourced watchlists (v2)
-│   │   └── <watchlist_id>/
-│   │       ├── events.jsonl
-│   │       ├── watchlist.json
-│   │       └── snapshots/
+│   ├── watchlists/           # Watchlists (shared.json + per-watchlist subdirs)
+│   ├── suggestions/          # Suggestions ledger + weekly outcomes
+│   │   ├── ledger.jsonl      # Append-only trade calls log
+│   │   └── outcomes/         # Weekly resolution results
+│   ├── ta/                   # Modular TA output per symbol
+│   └── scan_technical/       # TA output from scanner validation
 │   ├── portfolios/           # Portfolio snapshots & reports
 │   │   └── <portfolio_id>/
 │   │       ├── holdings.json
@@ -375,7 +398,7 @@ The system uses specialized AI agents for different workflows:
 - `csv-parser` — Parse Zerodha/Groww CSV exports into canonical holdings JSON
 - `portfolio-watcher` — Lightweight monitoring: surface signals with context (not hard gates)
 - `data-fetcher` — Fetch OHLCV data from Yahoo Finance
-- `technical-analyst` — Compute technical indicators (RSI, MACD, SMA, Bollinger, ADX, Volume)
+- `technical-analyst` — Compute full TA suite: RSI, MACD, SMA, Bollinger, ADX, Volume, StochRSI, divergence, chart patterns, entry signals
 - `fundamentals-researcher` — Research fundamental data (P/E, revenue growth, quarterly results) via web search
 - `news-sentiment` — Analyze recent news and market sentiment via web search
 - `legal-corporate` — Search for legal issues, red flags, and corporate actions via web search
@@ -415,9 +438,15 @@ uv sync
 
 ### Adding New Indicators
 
+**Core scoring** (affects weighted score):
 1. Add calculation to `scripts/technical_analysis.py`
 2. Add scoring logic to `scripts/score_stock.py`
 3. Update weights in `utils/config.py`
+
+**Signal-only indicators** (no score, for entry/exit signals):
+1. Add a new script to `scripts/ta/<name>.py` (follow existing pattern — print JSON to stdout)
+2. Add to `TA_SCRIPTS` list in `scripts/technical_all.py` and `scripts/validate_scan.py`
+3. Add metadata to `INDICATOR_META` in `dashboard/public/index.html`
 
 ### Agent Definitions
 
