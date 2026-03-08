@@ -65,6 +65,9 @@ select { background:#1a1a2e; color:#e0e0e0; border:1px solid #2a2a3e; padding:8p
 button.chart-btn { background:#1a1a2e; color:#888; border:1px solid #2a2a3e; padding:5px 12px; border-radius:6px; font-size:12px; cursor:pointer; transition:all .15s; }
 button.chart-btn:hover { color:#ccc; border-color:#444; }
 button.chart-btn.active { color:#00d4ff; border-color:#00d4ff; background:#00d4ff15; }
+button.chart-btn.btn-disabled { opacity:0.3; pointer-events:none; }
+button.chart-btn .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:middle; opacity:0.5; }
+button.chart-btn.active .dot { opacity:1; }
 
 /* Disclaimer */
 .disclaimer { position:fixed; bottom:0; left:0; right:0; background:#1a1a2e; border-top:1px solid #2a2a3e; padding:8px 16px; text-align:center; font-size:11px; color:#666; z-index:100; }
@@ -155,9 +158,15 @@ th.sort-desc::after { content: " ▼"; color: #00d4ff; }
         <button class="chart-btn" data-range="365">1Y</button>
         <span style="width:16px"></span>
         <span class="group-label">Overlays</span>
-        <button class="chart-btn overlay-btn active" data-overlay="sma">SMA</button>
-        <button class="chart-btn overlay-btn active" data-overlay="bb">Bollinger</button>
-        <button class="chart-btn overlay-btn" data-overlay="vol">Volume</button>
+        <button class="chart-btn overlay-btn active" data-overlay="sma"><span class="dot" style="background:#00d4ff"></span>SMA</button>
+        <button class="chart-btn overlay-btn active" data-overlay="bb"><span class="dot" style="background:#e879f9"></span>Bollinger</button>
+        <button class="chart-btn overlay-btn" data-overlay="vol"><span class="dot" style="background:#34d399"></span>Volume</button>
+        <button class="chart-btn overlay-btn btn-disabled" data-overlay="fib"><span class="dot" style="background:#fbbf24"></span>Fibonacci</button>
+        <button class="chart-btn overlay-btn btn-disabled" data-overlay="zones"><span class="dot" style="background:#f97316"></span>Zones</button>
+        <span style="width:16px"></span>
+        <span class="group-label">Indicators</span>
+        <button class="chart-btn overlay-btn" data-overlay="rsi"><span class="dot" style="background:#a855f7"></span>RSI</button>
+        <button class="chart-btn overlay-btn" data-overlay="macd"><span class="dot" style="background:#38bdf8"></span>MACD</button>
       </div>
       <div id="chartContainer"></div>
     </div>
@@ -478,7 +487,16 @@ let _smaLines = [];
 let _bbLines = [];
 let _ohlcvRaw = [];
 let _chartRange = 90;
-let _overlays = { sma: true, bb: true, vol: false };
+let _overlays = { sma: true, bb: true, vol: false, fib: false, zones: false, rsi: false, macd: false };
+let _currentTA = null;
+let _currentWatchlistEntry = null;
+
+function getWatchlistEntry(symbol) {
+  if (!wlAllStocks?.length) return null;
+  // Match ticker directly or with .NS suffix stripped
+  const clean = symbol.replace(/\.NS$/, '');
+  return wlAllStocks.find(s => s.ticker === symbol || s.ticker === clean || s.ticker + '.NS' === symbol) || null;
+}
 
 function computeSMA(data, period) {
   const result = [];
@@ -505,6 +523,73 @@ function computeBB(data, period, mult) {
   return { upper, lower };
 }
 
+function computeEMA(data, period) {
+  if (data.length < period) return [];
+  const k = 2 / (period + 1);
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += data[i].close;
+  const result = [{ time: data[period - 1].time, value: sum / period }];
+  for (let i = period; i < data.length; i++) {
+    const prev = result[result.length - 1].value;
+    result.push({ time: data[i].time, value: prev + k * (data[i].close - prev) });
+  }
+  return result;
+}
+
+function computeRSI(data, period = 14) {
+  if (data.length < period + 1) return [];
+  const changes = [];
+  for (let i = 1; i < data.length; i++) changes.push({ time: data[i].time, change: data[i].close - data[i - 1].close });
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 0; i < period; i++) {
+    if (changes[i].change > 0) avgGain += changes[i].change;
+    else avgLoss -= changes[i].change;
+  }
+  avgGain /= period; avgLoss /= period;
+  const result = [{ time: changes[period - 1].time, value: avgLoss === 0 ? 100 : +(100 - 100 / (1 + avgGain / avgLoss)).toFixed(2) }];
+  for (let i = period; i < changes.length; i++) {
+    const g = changes[i].change > 0 ? changes[i].change : 0;
+    const l = changes[i].change < 0 ? -changes[i].change : 0;
+    avgGain = (avgGain * (period - 1) + g) / period;
+    avgLoss = (avgLoss * (period - 1) + l) / period;
+    result.push({ time: changes[i].time, value: avgLoss === 0 ? 100 : +(100 - 100 / (1 + avgGain / avgLoss)).toFixed(2) });
+  }
+  return result;
+}
+
+function computeMACD(data, fast = 12, slow = 26, signal = 9) {
+  const emaFast = computeEMA(data, fast);
+  const emaSlow = computeEMA(data, slow);
+  // Align by time
+  const slowMap = {};
+  for (const d of emaSlow) slowMap[d.time] = d.value;
+  const macdLine = [];
+  for (const d of emaFast) {
+    if (slowMap[d.time] != null) macdLine.push({ time: d.time, value: +(d.value - slowMap[d.time]).toFixed(4) });
+  }
+  if (macdLine.length < signal) return { macdLine: [], signalLine: [], histogram: [] };
+  // Signal line = EMA of MACD values
+  const k = 2 / (signal + 1);
+  let sum = 0;
+  for (let i = 0; i < signal; i++) sum += macdLine[i].value;
+  const signalLine = [{ time: macdLine[signal - 1].time, value: +(sum / signal).toFixed(4) }];
+  for (let i = signal; i < macdLine.length; i++) {
+    const prev = signalLine[signalLine.length - 1].value;
+    signalLine.push({ time: macdLine[i].time, value: +(prev + k * (macdLine[i].value - prev)).toFixed(4) });
+  }
+  // Histogram
+  const sigMap = {};
+  for (const d of signalLine) sigMap[d.time] = d.value;
+  const histogram = [];
+  for (const d of macdLine) {
+    if (sigMap[d.time] != null) {
+      const val = +(d.value - sigMap[d.time]).toFixed(4);
+      histogram.push({ time: d.time, value: val, color: val >= 0 ? '#05966980' : '#ef444480' });
+    }
+  }
+  return { macdLine, signalLine, histogram };
+}
+
 function sliceByRange(data, days) {
   if (!data.length) return data;
   const cutoff = new Date(data[data.length - 1].time);
@@ -526,9 +611,16 @@ function renderChart() {
   const data = sliceByRange(_ohlcvRaw, _chartRange);
   if (!data.length) return;
 
+  // Calculate height: 500 base + 150 per sub-pane
+  let subPanes = 0;
+  if (_overlays.rsi) subPanes++;
+  if (_overlays.macd) subPanes++;
+  const chartHeight = 500 + 150 * subPanes;
+  container.style.height = chartHeight + 'px';
+
   _chart = LightweightCharts.createChart(container, {
     width: container.clientWidth,
-    height: 500,
+    height: chartHeight,
     layout: { background: { type: 'solid', color: '#0f0f0f' }, textColor: '#888' },
     grid: { vertLines: { color: '#1a1a2e' }, horzLines: { color: '#1a1a2e' } },
     crosshair: { mode: 0 },
@@ -576,11 +668,104 @@ function renderChart() {
     const upperData = sliceByRange(bb.upper, _chartRange);
     const lowerData = sliceByRange(bb.lower, _chartRange);
     if (upperData.length) {
-      const upper = _chart.addSeries(LightweightCharts.LineSeries, { color: '#00d4ff40', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
+      const upper = _chart.addSeries(LightweightCharts.LineSeries, { color: '#e879f980', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
       upper.setData(upperData);
-      const lower = _chart.addSeries(LightweightCharts.LineSeries, { color: '#00d4ff40', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
+      const lower = _chart.addSeries(LightweightCharts.LineSeries, { color: '#e879f980', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
       lower.setData(lowerData);
       _bbLines.push(upper, lower);
+    }
+  }
+
+  // Fibonacci levels
+  if (_overlays.fib && _currentTA?.fibonacci) {
+    const levels = _currentTA.fibonacci.retracement_levels || _currentTA.fibonacci.levels;
+    if (levels && typeof levels === 'object') {
+      const fibColors = { '0.236': '#94a3b8', '0.382': '#f59e0b', '0.5': '#00d4ff', '0.618': '#a855f7', '0.786': '#94a3b8' };
+      for (const [level, price] of Object.entries(levels)) {
+        const color = fibColors[level] || '#555';
+        _candleSeries.createPriceLine({
+          price: price,
+          color: color,
+          lineWidth: 1,
+          lineStyle: LightweightCharts.LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: `Fib ${level}`,
+        });
+      }
+    }
+  }
+
+  // Entry zone / Stop / Target lines
+  if (_overlays.zones && _currentWatchlistEntry) {
+    const wl = _currentWatchlistEntry;
+    if (wl.entry_zone?.low != null) {
+      _candleSeries.createPriceLine({ price: wl.entry_zone.low, color: '#059669', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'Entry Low' });
+    }
+    if (wl.entry_zone?.high != null) {
+      _candleSeries.createPriceLine({ price: wl.entry_zone.high, color: '#059669', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'Entry High' });
+    }
+    if (wl.stop_loss != null) {
+      _candleSeries.createPriceLine({ price: wl.stop_loss, color: '#ef4444', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, axisLabelVisible: true, title: 'Stop Loss' });
+    }
+    if (wl.target != null) {
+      _candleSeries.createPriceLine({ price: wl.target, color: '#00d4ff', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, axisLabelVisible: true, title: 'Target' });
+    }
+  }
+
+  // Divergence markers
+  if (_currentTA?.divergence) {
+    const markers = [];
+    const lastCandle = data[data.length - 1];
+    if (_currentTA.divergence.bullish_divergence?.detected) {
+      markers.push({ time: lastCandle.time, position: 'belowBar', color: '#059669', shape: 'circle', text: 'Bull Div' });
+    }
+    if (_currentTA.divergence.bearish_divergence?.detected) {
+      markers.push({ time: lastCandle.time, position: 'aboveBar', color: '#ef4444', shape: 'circle', text: 'Bear Div' });
+    }
+    if (markers.length) _candleSeries.setMarkers(markers);
+  }
+
+  // RSI sub-pane
+  let nextPane = 1;
+  if (_overlays.rsi) {
+    const rsiData = sliceByRange(computeRSI(_ohlcvRaw), _chartRange);
+    if (rsiData.length) {
+      const rsiSeries = _chart.addSeries(LightweightCharts.LineSeries, {
+        color: '#a855f7', lineWidth: 2, priceLineVisible: false, lastValueVisible: true,
+        pane: nextPane, priceScaleId: 'rsi',
+      });
+      rsiSeries.setData(rsiData);
+      rsiSeries.createPriceLine({ price: 70, color: '#ef444460', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false });
+      rsiSeries.createPriceLine({ price: 30, color: '#05966960', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false });
+      _chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.05 }, borderColor: '#2a2a3e' });
+      nextPane++;
+    }
+  }
+
+  // MACD sub-pane
+  if (_overlays.macd) {
+    const macd = computeMACD(_ohlcvRaw);
+    const macdSliced = sliceByRange(macd.macdLine, _chartRange);
+    const sigSliced = sliceByRange(macd.signalLine, _chartRange);
+    const histSliced = sliceByRange(macd.histogram, _chartRange);
+    if (macdSliced.length) {
+      const macdSeries = _chart.addSeries(LightweightCharts.LineSeries, {
+        color: '#00d4ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: true,
+        pane: nextPane, priceScaleId: 'macd',
+      });
+      macdSeries.setData(macdSliced);
+      const sigSeries = _chart.addSeries(LightweightCharts.LineSeries, {
+        color: '#f59e0b', lineWidth: 1, priceLineVisible: false, lastValueVisible: false,
+        pane: nextPane, priceScaleId: 'macd',
+      });
+      sigSeries.setData(sigSliced);
+      const histSeries = _chart.addSeries(LightweightCharts.HistogramSeries, {
+        priceLineVisible: false, lastValueVisible: false,
+        pane: nextPane, priceScaleId: 'macd',
+      });
+      histSeries.setData(histSliced);
+      macdSeries.createPriceLine({ price: 0, color: '#555', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Solid, axisLabelVisible: false });
+      _chart.priceScale('macd').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.05 }, borderColor: '#2a2a3e' });
     }
   }
 
@@ -622,6 +807,7 @@ document.querySelectorAll('[data-range]').forEach(btn => {
 // Overlay toggles
 document.querySelectorAll('.overlay-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    if (btn.classList.contains('btn-disabled')) return;
     const key = btn.dataset.overlay;
     _overlays[key] = !_overlays[key];
     btn.classList.toggle('active', _overlays[key]);
@@ -629,14 +815,33 @@ document.querySelectorAll('.overlay-btn').forEach(btn => {
   });
 });
 
+function updateOverlayButtons() {
+  const fibBtn = document.querySelector('[data-overlay="fib"]');
+  const zonesBtn = document.querySelector('[data-overlay="zones"]');
+  if (fibBtn) {
+    const hasFib = _currentTA?.fibonacci?.retracement_levels || _currentTA?.fibonacci?.levels;
+    fibBtn.classList.toggle('btn-disabled', !hasFib);
+    if (!hasFib && _overlays.fib) { _overlays.fib = false; fibBtn.classList.remove('active'); }
+  }
+  if (zonesBtn) {
+    const hasZones = !!_currentWatchlistEntry;
+    zonesBtn.classList.toggle('btn-disabled', !hasZones);
+    if (!hasZones && _overlays.zones) { _overlays.zones = false; zonesBtn.classList.remove('active'); }
+  }
+}
+
 document.getElementById('stockSelect').addEventListener('change', async function() {
   const sym = this.value;
   const detail = document.getElementById('techDetail');
-  if (!sym) { detail.innerHTML = ''; loadChart(null); return; }
+  if (!sym) { detail.innerHTML = ''; _currentTA = null; _currentWatchlistEntry = null; updateOverlayButtons(); loadChart(null); return; }
 
-  loadChart(sym);
   detail.innerHTML = '<div style="color:#555;padding:20px">Loading…</div>';
   const [ta, indicators] = await Promise.all([get(`/api/technical/${sym}`), get(`/api/ta/${sym}`)]);
+
+  _currentTA = indicators?.indicators || null;
+  _currentWatchlistEntry = getWatchlistEntry(sym);
+  updateOverlayButtons();
+  loadChart(sym);
 
   // Build summary header
   let summaryHtml = '';
