@@ -12,6 +12,7 @@ const sseClients: express.Response[] = [];
 
 // Static files
 app.use(express.static(path.join(__dirname, '../public')));
+app.use('/lib', express.static(path.join(__dirname, '../node_modules/lightweight-charts/dist')));
 
 // --- Helpers ---
 function readJsonl(filePath: string): any[] {
@@ -196,6 +197,51 @@ print(json.dumps(result))
     if (priceCache[s]) result[s] = priceCache[s];
   }
   res.json(result);
+});
+
+// OHLCV data from cached parquet files
+const CACHE_DIR = path.resolve(__dirname, '../../cache/ohlcv');
+const ohlcvCache: Record<string, { data: any[], ts: number }> = {};
+const OHLCV_TTL = 600_000; // 10 min
+
+app.get('/api/ohlcv/:symbol', (req, res) => {
+  const symbol = req.params.symbol;
+  const parquetFile = path.join(CACHE_DIR, `${symbol}.parquet`);
+  if (!fs.existsSync(parquetFile)) return res.status(404).json({ error: 'no OHLCV data' });
+
+  const now = Date.now();
+  if (ohlcvCache[symbol] && (now - ohlcvCache[symbol].ts) < OHLCV_TTL) {
+    return res.json(ohlcvCache[symbol].data);
+  }
+
+  try {
+    const { execSync } = require('child_process');
+    const script = `
+import pandas as pd, json, sys
+df = pd.read_parquet(sys.argv[1])
+records = []
+for idx, row in df.iterrows():
+    records.append({
+        'time': idx.strftime('%Y-%m-%d'),
+        'open': round(float(row['Open']), 2),
+        'high': round(float(row['High']), 2),
+        'low': round(float(row['Low']), 2),
+        'close': round(float(row['Close']), 2),
+        'volume': int(row['Volume'])
+    })
+print(json.dumps(records))
+`;
+    const result = execSync(
+      `cd ${path.resolve(__dirname, '../..')} && uv run python -c "${script.replace(/"/g, '\\"')}" "${parquetFile}"`,
+      { timeout: 15000, encoding: 'utf-8' }
+    ).trim();
+    const data = JSON.parse(result);
+    ohlcvCache[symbol] = { data, ts: now };
+    res.json(data);
+  } catch (e) {
+    console.error('OHLCV read error:', e);
+    res.status(500).json({ error: 'failed to read OHLCV' });
+  }
 });
 
 // Portfolios

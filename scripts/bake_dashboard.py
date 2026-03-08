@@ -16,14 +16,20 @@ Includes: watchlists, suggestions, technical scores, TA indicators
 
 import json
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
 
+import pandas as pd
+
 BASE = Path(__file__).parent.parent
 DATA = BASE / "data"
+CACHE = BASE / "cache" / "ohlcv"
 OUT  = BASE / "dashboard" / "public" / "data.js"
+LIB_SRC = BASE / "dashboard" / "node_modules" / "lightweight-charts" / "dist" / "lightweight-charts.standalone.production.js"
+LIB_DST = BASE / "dashboard" / "public" / "lib"
 
 
 def read_json(path: Path):
@@ -76,6 +82,46 @@ def load_ta_indicators() -> dict:
             by_symbol[sym] = {}
         by_symbol[sym][name] = read_json(f)
     return by_symbol
+
+
+def load_ohlcv(symbols: list) -> dict:
+    """Read parquet files for given symbols → {symbol: [{time,open,high,low,close,volume}]}"""
+    if not CACHE.exists():
+        return {}
+    result = {}
+    for sym in symbols:
+        pq = CACHE / f"{sym}.parquet"
+        if not pq.exists():
+            continue
+        try:
+            df = pd.read_parquet(pq)
+            records = []
+            for idx, row in df.iterrows():
+                records.append({
+                    "time": idx.strftime("%Y-%m-%d"),
+                    "open": round(float(row["Open"]), 2),
+                    "high": round(float(row["High"]), 2),
+                    "low": round(float(row["Low"]), 2),
+                    "close": round(float(row["Close"]), 2),
+                    "volume": int(row["Volume"]),
+                })
+            result[sym] = records
+        except Exception as e:
+            print(f"  ⚠️  OHLCV read failed for {sym}: {e}", file=sys.stderr)
+    return result
+
+
+def copy_lib():
+    """Copy lightweight-charts standalone JS to public/lib/ for static serving."""
+    if not LIB_SRC.exists():
+        print(f"  ⚠️  lightweight-charts not found at {LIB_SRC}", file=sys.stderr)
+        print("     Run: cd dashboard && npm install lightweight-charts", file=sys.stderr)
+        return
+    LIB_DST.mkdir(parents=True, exist_ok=True)
+    dst = LIB_DST / LIB_SRC.name
+    shutil.copy2(LIB_SRC, dst)
+    size_kb = dst.stat().st_size / 1024
+    print(f"  Copied lightweight-charts ({size_kb:.0f} KB) → public/lib/")
 
 
 def load_watchlists() -> list:
@@ -168,6 +214,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--push", action="store_true", help="git add/commit/push after baking")
     parser.add_argument("--no-prices", action="store_true", help="skip live price fetch")
+    parser.add_argument("--no-ohlcv", action="store_true", help="skip OHLCV baking")
     args = parser.parse_args()
 
     print("Baking dashboard data...")
@@ -177,7 +224,19 @@ def main():
     watchlists   = load_watchlists()
     ledger, outcomes = load_suggestions()
     stats        = compute_suggestion_stats(ledger, outcomes)
-    outcome_map  = {o["suggestion_id"]: o for o in outcomes if "suggestion_id" in o}
+
+    # Collect all symbols that have technical data
+    all_symbols = [t["symbol"] for t in technical]
+
+    # OHLCV
+    ohlcv = {}
+    if not args.no_ohlcv and all_symbols:
+        print(f"  Baking OHLCV for {len(all_symbols)} symbols...", end=" ", flush=True)
+        ohlcv = load_ohlcv(all_symbols)
+        print(f"got {len(ohlcv)}")
+
+    # Copy lightweight-charts lib for static serving
+    copy_lib()
 
     # Fetch prices for all watchlist tickers
     prices = {}
@@ -202,6 +261,7 @@ def main():
         "bakedAt": datetime.now(timezone.utc).isoformat(),
         "technical": technical,
         "ta": ta,
+        "ohlcv": ohlcv,
         "watchlists": watchlists,
         "suggestions": ledger,
         "suggestionOutcomes": outcomes,
@@ -215,12 +275,12 @@ def main():
     OUT.write_text(js, encoding="utf-8")
     size_kb = OUT.stat().st_size / 1024
     print(f"✅ Wrote {OUT} ({size_kb:.1f} KB)")
-    print(f"   Stocks: {len(technical)} | TA: {len(ta)} | Watchlists: {len(watchlists)} | Suggestions: {len(ledger)}")
+    print(f"   Stocks: {len(technical)} | TA: {len(ta)} | OHLCV: {len(ohlcv)} | Watchlists: {len(watchlists)} | Suggestions: {len(ledger)}")
 
     if args.push:
         print("\nPushing to GitHub...")
         cmds = [
-            ["git", "add", "dashboard/public/data.js", "dashboard/public/index.html"],
+            ["git", "add", "dashboard/public/data.js", "dashboard/public/index.html", "dashboard/public/lib/"],
             ["git", "commit", "-m", f"chore: bake dashboard data {datetime.now().strftime('%Y-%m-%d %H:%M')}"],
             ["git", "push"],
         ]

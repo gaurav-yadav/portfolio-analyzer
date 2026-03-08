@@ -57,6 +57,15 @@ select { background:#1a1a2e; color:#e0e0e0; border:1px solid #2a2a3e; padding:8p
 .bearish { color:#ef4444; }
 .neutral { color:#f59e0b; }
 
+/* Chart */
+#chartContainer { width:100%; height:500px; border-radius:12px; overflow:hidden; border:1px solid #2a2a3e; margin-bottom:16px; }
+#volumeContainer { width:100%; height:120px; border-radius:12px; overflow:hidden; border:1px solid #2a2a3e; margin-bottom:16px; }
+.chart-controls { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center; }
+.chart-controls .group-label { font-size:11px; color:#555; text-transform:uppercase; letter-spacing:1px; margin-right:4px; }
+button.chart-btn { background:#1a1a2e; color:#888; border:1px solid #2a2a3e; padding:5px 12px; border-radius:6px; font-size:12px; cursor:pointer; transition:all .15s; }
+button.chart-btn:hover { color:#ccc; border-color:#444; }
+button.chart-btn.active { color:#00d4ff; border-color:#00d4ff; background:#00d4ff15; }
+
 /* Empty state */
 .prox-in { color:#059669; font-weight:700; }
 .prox-near { color:#f59e0b; font-weight:600; }
@@ -103,6 +112,7 @@ th.sort-desc::after { content: " ▼"; color: #00d4ff; }
 }
 </style>
 <script src="data.js"></script>
+<script src="/lib/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
 
@@ -133,6 +143,20 @@ th.sort-desc::after { content: " ▼"; color: #00d4ff; }
   <!-- TECHNICAL -->
   <div class="page" id="page-technical">
     <select id="stockSelect"><option value="">Select a stock...</option></select>
+    <div id="chartArea" style="display:none">
+      <div class="chart-controls">
+        <span class="group-label">Period</span>
+        <button class="chart-btn active" data-range="90">3M</button>
+        <button class="chart-btn" data-range="180">6M</button>
+        <button class="chart-btn" data-range="365">1Y</button>
+        <span style="width:16px"></span>
+        <span class="group-label">Overlays</span>
+        <button class="chart-btn overlay-btn active" data-overlay="sma">SMA</button>
+        <button class="chart-btn overlay-btn active" data-overlay="bb">Bollinger</button>
+        <button class="chart-btn overlay-btn" data-overlay="vol">Volume</button>
+      </div>
+      <div id="chartContainer"></div>
+    </div>
     <div id="techDetail"></div>
   </div>
 
@@ -442,11 +466,171 @@ async function loadTechnical() {
   }
 }
 
+// ── Chart Engine ─────────────────────────────────────────────────────────────
+let _chart = null;
+let _candleSeries = null;
+let _volumeSeries = null;
+let _smaLines = [];
+let _bbLines = [];
+let _ohlcvRaw = [];
+let _chartRange = 90;
+let _overlays = { sma: true, bb: true, vol: false };
+
+function computeSMA(data, period) {
+  const result = [];
+  for (let i = period - 1; i < data.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += data[j].close;
+    result.push({ time: data[i].time, value: +(sum / period).toFixed(2) });
+  }
+  return result;
+}
+
+function computeBB(data, period, mult) {
+  const upper = [], lower = [];
+  for (let i = period - 1; i < data.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += data[j].close;
+    const mean = sum / period;
+    let sqSum = 0;
+    for (let j = i - period + 1; j <= i; j++) sqSum += (data[j].close - mean) ** 2;
+    const std = Math.sqrt(sqSum / period);
+    upper.push({ time: data[i].time, value: +(mean + mult * std).toFixed(2) });
+    lower.push({ time: data[i].time, value: +(mean - mult * std).toFixed(2) });
+  }
+  return { upper, lower };
+}
+
+function sliceByRange(data, days) {
+  if (!data.length) return data;
+  const cutoff = new Date(data[data.length - 1].time);
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutStr = cutoff.toISOString().slice(0, 10);
+  return data.filter(d => d.time >= cutStr);
+}
+
+function destroyChart() {
+  if (_chart) { _chart.remove(); _chart = null; }
+  _candleSeries = null; _volumeSeries = null; _smaLines = []; _bbLines = [];
+}
+
+function renderChart() {
+  destroyChart();
+  const container = document.getElementById('chartContainer');
+  if (!_ohlcvRaw.length) return;
+
+  const data = sliceByRange(_ohlcvRaw, _chartRange);
+  if (!data.length) return;
+
+  _chart = LightweightCharts.createChart(container, {
+    width: container.clientWidth,
+    height: 500,
+    layout: { background: { type: 'solid', color: '#0f0f0f' }, textColor: '#888' },
+    grid: { vertLines: { color: '#1a1a2e' }, horzLines: { color: '#1a1a2e' } },
+    crosshair: { mode: 0 },
+    rightPriceScale: { borderColor: '#2a2a3e' },
+    timeScale: { borderColor: '#2a2a3e', timeVisible: false },
+  });
+
+  _candleSeries = _chart.addSeries(LightweightCharts.CandlestickSeries, {
+    upColor: '#059669', downColor: '#ef4444', borderVisible: false,
+    wickUpColor: '#059669', wickDownColor: '#ef4444',
+  });
+  _candleSeries.setData(data);
+
+  // Volume overlay
+  if (_overlays.vol) {
+    _volumeSeries = _chart.addSeries(LightweightCharts.HistogramSeries, {
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'vol',
+    });
+    _chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    _volumeSeries.setData(data.map(d => ({
+      time: d.time,
+      value: d.volume,
+      color: d.close >= d.open ? '#05966940' : '#ef444440',
+    })));
+  }
+
+  // SMA overlays
+  if (_overlays.sma) {
+    const colors = ['#00d4ff', '#f59e0b', '#a855f7'];
+    const periods = [20, 50, 200];
+    periods.forEach((p, i) => {
+      const smaData = sliceByRange(computeSMA(_ohlcvRaw, p), _chartRange);
+      if (smaData.length) {
+        const line = _chart.addSeries(LightweightCharts.LineSeries, { color: colors[i], lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+        line.setData(smaData);
+        _smaLines.push(line);
+      }
+    });
+  }
+
+  // Bollinger Bands
+  if (_overlays.bb) {
+    const bb = computeBB(_ohlcvRaw, 20, 2);
+    const upperData = sliceByRange(bb.upper, _chartRange);
+    const lowerData = sliceByRange(bb.lower, _chartRange);
+    if (upperData.length) {
+      const upper = _chart.addSeries(LightweightCharts.LineSeries, { color: '#00d4ff40', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
+      upper.setData(upperData);
+      const lower = _chart.addSeries(LightweightCharts.LineSeries, { color: '#00d4ff40', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
+      lower.setData(lowerData);
+      _bbLines.push(upper, lower);
+    }
+  }
+
+  _chart.timeScale().fitContent();
+
+  // Resize handler
+  const ro = new ResizeObserver(() => {
+    if (_chart) _chart.applyOptions({ width: container.clientWidth });
+  });
+  ro.observe(container);
+}
+
+async function loadChart(symbol) {
+  const area = document.getElementById('chartArea');
+  if (!symbol) { area.style.display = 'none'; destroyChart(); _ohlcvRaw = []; return; }
+  area.style.display = 'block';
+  _ohlcvRaw = [];
+
+  // Fetch OHLCV — try baked first, then live API
+  let data = BAKED?.ohlcv?.[symbol] || null;
+  if (!data) {
+    data = await fetch(`/api/ohlcv/${symbol}`).then(r => r.ok ? r.json() : null).catch(() => null);
+  }
+  if (!data || !data.length) { area.style.display = 'none'; return; }
+  _ohlcvRaw = data;
+  renderChart();
+}
+
+// Range buttons
+document.querySelectorAll('[data-range]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-range]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    _chartRange = parseInt(btn.dataset.range);
+    renderChart();
+  });
+});
+
+// Overlay toggles
+document.querySelectorAll('.overlay-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const key = btn.dataset.overlay;
+    _overlays[key] = !_overlays[key];
+    btn.classList.toggle('active', _overlays[key]);
+    renderChart();
+  });
+});
+
 document.getElementById('stockSelect').addEventListener('change', async function() {
   const sym = this.value;
   const detail = document.getElementById('techDetail');
-  if (!sym) { detail.innerHTML = ''; return; }
+  if (!sym) { detail.innerHTML = ''; loadChart(null); return; }
 
+  loadChart(sym);
   detail.innerHTML = '<div style="color:#555;padding:20px">Loading…</div>';
   const [ta, indicators] = await Promise.all([get(`/api/technical/${sym}`), get(`/api/ta/${sym}`)]);
 
