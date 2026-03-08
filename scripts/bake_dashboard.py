@@ -83,12 +83,10 @@ def load_watchlists() -> list:
     if not d.exists():
         return []
     results = []
-    for subdir in d.iterdir():
-        wl_file = subdir / "watchlist.json"
-        if wl_file.exists():
-            data = read_json(wl_file)
-            if data:
-                results.append({"id": subdir.name, "data": data})
+    for f in d.glob("*.json"):
+        data = read_json(f)
+        if data:
+            results.append({"id": f.stem, "data": data})
     return results
 
 
