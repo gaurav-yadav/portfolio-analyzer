@@ -115,9 +115,12 @@ th.sort-desc::after { content: " ▼"; color: #00d4ff; }
 </nav>
 
 <div class="container">
-  <div class="header">
+  <div class="header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
     <h1>📊 Portfolio Analyzer</h1>
-    <span id="lastUpdate"></span>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+      <span id="lastUpdate" style="font-size:12px;color:#555"></span>
+      <span id="snapshotBadge" style="display:none;font-size:11px;background:#00d4ff15;color:#00d4ff;border:1px solid #00d4ff30;padding:2px 10px;border-radius:10px">📦 Static snapshot — prices from bake time</span>
+    </div>
   </div>
 
   <!-- OVERVIEW -->
@@ -242,7 +245,13 @@ const get = BAKED ? async (url) => {
   if (url === '/api/suggestions') return BAKED.suggestions || [];
   if (url === '/api/suggestions/outcomes') return BAKED.suggestionOutcomes || [];
   if (url === '/api/watchlists') return BAKED.watchlists || [];
-  if (url.startsWith('/api/prices')) return {}; // no live prices in static mode
+  if (url.startsWith('/api/prices')) {
+    // Return baked prices (from snapshot time) for matching symbols
+    const syms = new URL('http://x' + url).searchParams.get('symbols')?.split(',') || [];
+    const out = {};
+    for (const s of syms) if (BAKED.prices?.[s]) out[s] = BAKED.prices[s];
+    return out;
+  }
   return null;
 } : url => fetch(url).then(r => r.json()).catch(() => null);
 
@@ -692,9 +701,11 @@ if (!BAKED) {
     document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
   };
 } else {
-  // Show baked timestamp in static mode
+  // Static mode — show bake timestamp + badge
   const bakedAt = new Date(BAKED.bakedAt);
-  document.getElementById('lastUpdate').textContent = '📦 Snapshot: ' + bakedAt.toLocaleDateString('en-IN', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+  const fmt = bakedAt.toLocaleDateString('en-IN', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Calcutta'});
+  document.getElementById('lastUpdate').textContent = 'Published: ' + fmt + ' IST';
+  document.getElementById('snapshotBadge').style.display = 'block';
 }
 
 // Init
