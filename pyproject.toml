@@ -9,5 +9,6 @@ dependencies = [
     "pandas>=2.3.3",
     "pandas-ta>=0.4.71b0",
     "pyarrow>=23.0.1",
+    "watchdog>=6.0.0",
     "yfinance>=1.2.0",
 ]
