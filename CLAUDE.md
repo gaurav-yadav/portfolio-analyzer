@@ -8,22 +8,35 @@ Keep responses minimal; write all details to files.
 
 ---
 
-## Non‑Negotiables
+## Non-Negotiables
 
 - Prefer **deterministic scripts** for transforms and state writes.
 - **All agents run `claude-sonnet-4-6`** (set in `.claude/settings.json` + each agent's frontmatter `model:` field).
-- Watchlists are flat JSON files: `data/watchlists/<name>.json` (NOT subdirectories).
+- Watchlists use flat file format: `data/watchlists/<name>.json`. Single source of truth. No subdirectory/event-sourced format.
+- Default watchlist is **`default`** (file: `data/watchlists/default.json`). `shared.json` still exists for backward compat.
 - Treat WebSearch/WebFetch outputs as **candidate discovery only**; confirm tradability via OHLCV-based validation (`scripts/validate_scan.py`).
 - When data is missing/stale, **refresh only what's needed** (don't rerun everything blindly).
-- `technical_all.py` runs BOTH the core scoring script AND the modular `scripts/ta/` scripts (stoch_rsi, divergence, patterns, entry_points) — saves to `data/ta/<symbol>_<name>.json`.
-- `validate_scan.py` runs the same `scripts/ta/` suite post-validation — saves to `data/scan_technical/`.
+- `technical_all.py` runs BOTH the core scoring script AND the modular `scripts/ta/` scripts (stoch_rsi, divergence, patterns, entry_points) -- saves to `data/ta/<symbol>_<name>.json`.
+- `validate_scan.py` runs the same `scripts/ta/` suite post-validation -- saves to `data/scan_technical/`.
+- **Agents interpret signals, they don't know thresholds.** Thresholds live in `utils/ta_config.py`.
+
+---
+
+## Computation Layer (utils/)
+
+| Module | Purpose |
+|--------|---------|
+| `utils/data.py` | Data access: `load_watchlist()`, `save_watchlist()`, `create_watchlist()`, load holdings, load OHLCV cache |
+| `utils/ta_config.py` | All TA thresholds (RSI zones, StochRSI, ADX, Bollinger, etc.). Single source of truth for indicator parameters. |
+| `utils/indicators.py` | Shared computation functions used by `scripts/ta/` and `technical_all.py` |
+| `utils/config.py` | Scoring weights, recommendation thresholds, safety gates |
 
 ---
 
 ## Primary Jobs (3)
 
 1) **Watchlists + Scanner**
-   - Create/manage watchlists; store *what/why/entry/invalidation/timing/re-entry* in events.
+   - Create/manage watchlists; store *what/why/entry/invalidation/timing/re-entry* in flat files.
    - Scan stocks and add best candidates to watchlists.
    - Track outcomes via per-run snapshots.
 
@@ -36,49 +49,48 @@ Keep responses minimal; write all details to files.
 
 ---
 
-## Intents → Agent → Deterministic Steps
+## Intents -> Agent -> Deterministic Steps
 
-### Watchlist management (v2)
+### Watchlist management
 Trigger: "create watchlist", "add to watchlist", "remove from watchlist", "snapshot watchlist"
 - Agent: `watchlist-manager` (`.claude/agents/watchlist-manager.md`)
+- Source of truth: `data/watchlists/<watchlist_id>.json` (flat file, edit directly)
 - Scripts:
-  - `uv run python scripts/watchlist_events.py add|remove|note <watchlist_id> ...`
-  - `uv run python scripts/watchlist_events.py rebuild <watchlist_id>`
-  - `uv run python scripts/watchlist_events.py validate <watchlist_id>`
   - `uv run python scripts/watchlist_snapshot.py <watchlist_id>`
   - Optional: `uv run python scripts/watchlist_report.py <watchlist_id>`
+- Do NOT use `watchlist_events.py` -- deprecated
 
-### Stock scanner → validated shortlists
+### Stock scanner -> validated shortlists
 Trigger: "run stock scanner", "scan for stocks"
-- Agent: `scanner` → `scan-validator` → optional `breakout-crosscheck` / `reversal-crosscheck`
+- Agent: `scanner` -> `scan-validator` -> optional `breakout-crosscheck` / `reversal-crosscheck`
 - Deterministic validation: `uv run python scripts/validate_scan.py latest --enrich-setups --rank`
-- Optional add-to-watchlist: use `watchlist-manager` (or directly append events via `watchlist_events.py`).
+- Optional add-to-watchlist: use `watchlist-manager` (edits `data/watchlists/<id>.json` directly).
 
 ### Portfolio monitoring (holdings + watchlist signals)
 Trigger: "watch my portfolio", "monitor my holdings"
 - Agent: `portfolio-watcher` (`.claude/agents/portfolio-watcher.md`)
 - Scripts:
-  - `uv run python scripts/fetch_all.py --holdings --watchlist-id <watchlist_id>`
-  - `uv run python scripts/technical_all.py --holdings --watchlist-id <watchlist_id>`
-  - `uv run python scripts/watch_portfolio.py --holdings --watchlist-id <watchlist_id>`
+  - `uv run python scripts/fetch_all.py --holdings --watchlist-id <watchlist_id>` (or `--all-watchlists`)
+  - `uv run python scripts/technical_all.py --holdings --watchlist-id <watchlist_id>` (or `--all-watchlists`)
+  - `uv run python scripts/watch_portfolio.py --holdings --watchlist-id <watchlist_id>` (or `--all-watchlists`)
   - `uv run python scripts/watchlist_snapshot.py <watchlist_id>`
 
 ### Full portfolio analysis (end-to-end)
-Trigger: "analyze my portfolio from …", "run full portfolio analysis"
+Trigger: "analyze my portfolio from ...", "run full portfolio analysis"
 - Agent: `portfolio-analyzer` (`.claude/agents/portfolio-analyzer.md`)
 - Import options:
-  - Agent-extracted holdings JSON → normalize: `uv run python scripts/holdings_validate.py ...`
+  - Agent-extracted holdings JSON -> normalize: `uv run python scripts/holdings_validate.py ...`
   - CSV/TSV import: `uv run python scripts/portfolio_importer.py ...`
   - Zerodha/Groww CSV: `uv run python scripts/parse_csv.py ...` then `holdings_validate.py`
 - Then:
-  - `uv run python scripts/fetch_all.py --holdings`
-  - `uv run python scripts/technical_all.py --holdings`
+  - `uv run python scripts/fetch_all.py --holdings --all-watchlists`
+  - `uv run python scripts/technical_all.py --holdings --all-watchlists`
   - Run staleness gate: `uv run python scripts/research_status.py --holdings --days 30 --out data/runs/<run_id>/research_status.json`
     - The 30-day policy is enforced by the script output, not agent judgment
     - Agents branch based on `missing`/`stale` status per symbol
   - Web research agents as-needed (missing/stale fundamentals/news/legal)
   - `uv run python scripts/score_all.py --profile portfolio_long_term`
-  - `uv run python scripts/compile_report.py --portfolio-id <portfolio_id>` → `data/portfolios/<portfolio_id>/reports/analysis_*.csv`
+  - `uv run python scripts/compile_report.py --portfolio-id <portfolio_id>` -> `data/portfolios/<portfolio_id>/reports/analysis_*.csv`
   - `uv run python scripts/portfolio_snapshot.py --portfolio-id <portfolio_id>`
   - Write markdown report to `data/portfolios/<portfolio_id>/report.md` (agent-written)
   - Archive + list reports: `uv run python scripts/portfolio_report_archive.py --portfolio-id <portfolio_id> --json`
@@ -101,9 +113,11 @@ Trigger: "log this as a suggestion", "resolve suggestions", "how accurate are my
 - Outcomes: `data/suggestions/outcomes/`
 
 ### Dashboard
-- Local (live API): `cd dashboard && npx tsx src/server.ts` → http://localhost:3323
+- Local (live API): `cd dashboard && npx tsx src/server.ts` -> http://localhost:3323
 - Static bake for GitHub Pages: `uv run python scripts/bake_dashboard.py --push`
-- Bakes: `data/technical/`, `data/ta/`, `data/watchlists/`, `data/suggestions/` → `dashboard/public/data.js`
+- **Always bake with prices** (never use `--no-prices`). Watchlist columns (NOW, SINCE ADD, PROXIMITY, R:R) require baked prices.
+- Bakes: `data/technical/`, `data/ta/`, `cache/ohlcv/`, `data/watchlists/`, `data/suggestions/` -> `dashboard/public/data.js`
+- Also copies `lightweight-charts` lib to `dashboard/public/lib/` for static chart rendering
 - GitHub Actions auto-deploys on push to main (`.github/workflows/deploy.yml`)
 
 ---
@@ -140,8 +154,9 @@ IPOs:
 ## Key File Contracts
 
 ### Watchlists
-- Shared watchlist: `data/watchlists/shared.json` (flat file, not subdirectory)
-- Events log: `data/watchlist_events.jsonl` (append-only)
+- Default watchlist: `data/watchlists/default.json` (flat file)
+- Any watchlist: `data/watchlists/<id>.json` (flat file, not subdirectory)
+- `watchlist_events.py` is deprecated -- do not call it
 
 ### Suggestions
 - Ledger: `data/suggestions/ledger.jsonl` (append-only trade calls)

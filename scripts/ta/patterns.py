@@ -31,9 +31,9 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-import pandas_ta as ta
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.ta_config import BULL_FLAG_POLE_MIN, BULL_FLAG_CONSOL_MAX, PATTERN_LOOKBACK
 from utils.ta_common import load_ohlcv, output_result, get_symbol_from_args, safe_round, log
 
 
@@ -59,8 +59,8 @@ def find_swing_lows(series: pd.Series, window: int = 5) -> list[tuple[int, float
 
 def check_bull_flag(df: pd.DataFrame, lookback: int = 60) -> Optional[dict]:
     """
-    Bull flag: sharp upward pole (>8% in ≤10 bars), followed by
-    tight channel consolidation (price stays within 5% range for ≥5 bars).
+    Bull flag: sharp upward pole (>BULL_FLAG_POLE_MIN in ≤10 bars), followed by
+    tight channel consolidation (price stays within BULL_FLAG_CONSOL_MAX range for ≥5 bars).
     """
     recent = df.tail(lookback).reset_index(drop=True)
     closes = recent['Close'].values
@@ -71,7 +71,7 @@ def check_bull_flag(df: pd.DataFrame, lookback: int = 60) -> Optional[dict]:
         for pole_end in range(pole_start + 3, min(pole_start + 12, n - 5)):
             pole_gain = (closes[pole_end] - closes[pole_start]) / closes[pole_start]
 
-            if pole_gain >= 0.08:  # At least 8% pole
+            if pole_gain >= BULL_FLAG_POLE_MIN:
                 # Check consolidation after pole
                 consol_bars = closes[pole_end:]
                 if len(consol_bars) < 5:
@@ -81,7 +81,7 @@ def check_bull_flag(df: pd.DataFrame, lookback: int = 60) -> Optional[dict]:
                 consol_low = min(consol_bars)
                 consol_range = (consol_high - consol_low) / consol_high
 
-                if consol_range <= 0.06:  # Tight consolidation (≤6% range)
+                if consol_range <= BULL_FLAG_CONSOL_MAX:
                     # Current price near top of consolidation = potential breakout
                     current = closes[-1]
                     at_breakout = current >= consol_high * 0.98
@@ -124,7 +124,7 @@ def check_bear_flag(df: pd.DataFrame, lookback: int = 60) -> Optional[dict]:
         for pole_end in range(pole_start + 3, min(pole_start + 12, n - 5)):
             pole_drop = (closes[pole_start] - closes[pole_end]) / closes[pole_start]
 
-            if pole_drop >= 0.08:
+            if pole_drop >= BULL_FLAG_POLE_MIN:
                 consol_bars = closes[pole_end:]
                 if len(consol_bars) < 5:
                     continue
@@ -133,7 +133,7 @@ def check_bear_flag(df: pd.DataFrame, lookback: int = 60) -> Optional[dict]:
                 consol_low = min(consol_bars)
                 consol_range = (consol_high - consol_low) / consol_high
 
-                if consol_range <= 0.06:
+                if consol_range <= BULL_FLAG_CONSOL_MAX:
                     current = closes[-1]
                     at_breakdown = current <= consol_low * 1.02
 

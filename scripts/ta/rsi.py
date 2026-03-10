@@ -13,16 +13,16 @@ Computes RSI(14) and provides overbought/oversold signals.
 import sys
 from pathlib import Path
 
-import pandas_ta as ta
-
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.indicators import compute_all
+from utils.ta_config import RSI_PERIOD, RSI_OVERSOLD, RSI_APPROACHING_OVERSOLD, RSI_OVERBOUGHT, RSI_ELEVATED
 from utils.ta_common import load_ohlcv, output_result, get_symbol_from_args, safe_round, log
 
 
-def analyze_rsi(df, period: int = 14) -> dict:
+def analyze_rsi(df, period: int = RSI_PERIOD) -> dict:
     """Compute RSI and generate signals."""
-    df = df.copy()
-    df['rsi'] = ta.rsi(df['Close'], length=period)
+    ind = compute_all(df)
+    df = ind['df']
 
     current = safe_round(df['rsi'].iloc[-1], 2)
     prev = safe_round(df['rsi'].iloc[-2], 2)
@@ -32,16 +32,16 @@ def analyze_rsi(df, period: int = 14) -> dict:
     if current is None:
         signal = "no_data"
         signal_strength = 0
-    elif current < 30:
+    elif current < RSI_OVERSOLD:
         signal = "oversold"
-        signal_strength = min(10, int((30 - current) / 3))  # 0-10 scale
-    elif current > 70:
+        signal_strength = min(10, int((RSI_OVERSOLD - current) / 3))  # 0-10 scale
+    elif current > RSI_OVERBOUGHT:
         signal = "overbought"
-        signal_strength = min(10, int((current - 70) / 3))
-    elif current < 40:
+        signal_strength = min(10, int((current - RSI_OVERBOUGHT) / 3))
+    elif current < RSI_APPROACHING_OVERSOLD:
         signal = "approaching_oversold"
         signal_strength = 3
-    elif current > 60:
+    elif current > RSI_ELEVATED:
         signal = "approaching_overbought"
         signal_strength = 3
     else:
@@ -76,7 +76,7 @@ def analyze_rsi(df, period: int = 14) -> dict:
         "signal_strength": signal_strength,
         "trend": trend,
         "entry_signal": entry_signal,
-        "thresholds": {"oversold": 30, "overbought": 70},
+        "thresholds": {"oversold": RSI_OVERSOLD, "overbought": RSI_OVERBOUGHT},
     }
 
 

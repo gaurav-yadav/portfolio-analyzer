@@ -13,25 +13,19 @@ Computes Bollinger Bands (20,2) for mean reversion signals.
 import sys
 from pathlib import Path
 
-import pandas_ta as ta
-
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.indicators import compute_all
+from utils.ta_config import BB_PERIOD, BB_STD, BB_LOWER_THRESHOLD, BB_UPPER_THRESHOLD
 from utils.ta_common import load_ohlcv, output_result, get_symbol_from_args, safe_round, log
 
 
-def analyze_bollinger(df, length: int = 20, std: float = 2.0) -> dict:
+def analyze_bollinger(df, length: int = BB_PERIOD, std: float = BB_STD) -> dict:
     """Compute Bollinger Bands and generate signals."""
-    df = df.copy()
+    ind = compute_all(df)
+    df = ind['df']
 
-    bbands = ta.bbands(df['Close'], length=length, std=std)
-    if bbands is None:
+    if 'bb_lower' not in df.columns:
         return {"error": "Could not compute Bollinger Bands"}
-
-    df['bb_lower'] = bbands.iloc[:, 0]
-    df['bb_middle'] = bbands.iloc[:, 1]
-    df['bb_upper'] = bbands.iloc[:, 2]
-    df['bb_bandwidth'] = bbands.iloc[:, 3]
-    df['bb_pctb'] = bbands.iloc[:, 4]
 
     latest = df.iloc[-1]
     price = safe_round(latest['Close'], 2)
@@ -51,10 +45,10 @@ def analyze_bollinger(df, length: int = 20, std: float = 2.0) -> dict:
     elif pctb < 0:
         signal = "oversold"
         position = "below_lower_band"
-    elif pctb > 0.8:
+    elif pctb > BB_UPPER_THRESHOLD:
         signal = "approaching_upper"
         position = "upper_zone"
-    elif pctb < 0.2:
+    elif pctb < BB_LOWER_THRESHOLD:
         signal = "approaching_lower"
         position = "lower_zone"
     else:

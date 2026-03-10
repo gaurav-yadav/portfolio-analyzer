@@ -17,6 +17,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils.data import load_watchlist, watchlist_symbols, list_watchlists, all_watchlist_symbols  # noqa: E402
+
+
 def normalize_yf_symbol(symbol: str, default_suffix: str) -> str:
     s = symbol.strip().upper()
     if not s:
@@ -34,21 +38,6 @@ def load_holdings_symbols(holdings_path: Path) -> list[str]:
     return [h["symbol_yf"] for h in holdings if h.get("symbol_yf")]
 
 
-def load_watchlist_symbols(watchlist_path: Path, default_suffix: str) -> list[str]:
-    if not watchlist_path.exists():
-        return []
-    with open(watchlist_path) as f:
-        watchlist = json.load(f)
-    stocks = watchlist.get("stocks") or []
-    symbols: list[str] = []
-    for stock in stocks:
-        raw = (stock.get("symbol") or "").strip()
-        if not raw:
-            continue
-        symbols.append(normalize_yf_symbol(raw, default_suffix))
-    return symbols
-
-
 def main():
     base_path = Path(__file__).parent.parent
     parser = argparse.ArgumentParser(description="Run technical analysis for holdings/watchlist/symbols.")
@@ -60,7 +49,12 @@ def main():
     parser.add_argument(
         "--watchlist-id",
         default="",
-        help="Include symbols from data/watchlists/<watchlist_id>/watchlist.json.",
+        help="Include symbols from data/watchlists/<watchlist_id>.json.",
+    )
+    parser.add_argument(
+        "--all-watchlists",
+        action="store_true",
+        help="Include symbols from all watchlists.",
     )
     parser.add_argument(
         "--default-suffix",
@@ -76,16 +70,14 @@ def main():
     args = parser.parse_args()
 
     holdings_file = base_path / "data" / "holdings.json"
-    watchlist_file = None
-    if args.watchlist_id:
-        watchlist_file = base_path / "data" / "watchlists" / args.watchlist_id / "watchlist.json"
 
     use_holdings = args.holdings
     use_watchlist = bool(args.watchlist_id)
+    use_all_watchlists = args.all_watchlists
     explicit_symbols = [s for s in (args.symbols or []) if s.strip()]
 
     # Backward-compatible default: if user passes no selectors, use holdings.
-    if not use_holdings and not use_watchlist and not explicit_symbols:
+    if not use_holdings and not use_watchlist and not use_all_watchlists and not explicit_symbols:
         use_holdings = True
 
     symbols: list[str] = []
@@ -95,14 +87,13 @@ def main():
             sys.exit(1)
         symbols.extend(load_holdings_symbols(holdings_file))
     if use_watchlist:
-        if not watchlist_file.exists():
-            print(
-                f"Error: watchlist not found at {watchlist_file}. "
-                "Create it via: uv run python scripts/watchlist_events.py add <watchlist_id> <symbol>",
-                file=sys.stderr,
-            )
+        wl_syms = watchlist_symbols(args.watchlist_id)
+        if not wl_syms:
+            print(f"Error: watchlist '{args.watchlist_id}' not found or empty.", file=sys.stderr)
             sys.exit(1)
-        symbols.extend(load_watchlist_symbols(watchlist_file, args.default_suffix))
+        symbols.extend(wl_syms)  # Already YF-formatted by data layer
+    if use_all_watchlists:
+        symbols.extend(all_watchlist_symbols().keys())  # Already YF-formatted
     symbols.extend([normalize_yf_symbol(s, default_suffix="") for s in explicit_symbols])
 
     # Deduplicate while preserving order

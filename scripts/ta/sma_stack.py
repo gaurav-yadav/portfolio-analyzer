@@ -12,20 +12,16 @@ Analyzes SMA 20/50/200 alignment for trend direction.
 import sys
 from pathlib import Path
 
-import pandas_ta as ta
-
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.indicators import compute_all
+from utils.ta_config import SMA_FAST, SMA_MID, SMA_SLOW
 from utils.ta_common import load_ohlcv, output_result, get_symbol_from_args, safe_round, log, format_date
 
 
 def analyze_sma_stack(df) -> dict:
     """Analyze SMA stack alignment and crossovers."""
-    df = df.copy()
-
-    df['sma20'] = ta.sma(df['Close'], length=20)
-    df['sma50'] = ta.sma(df['Close'], length=50)
-    if len(df) >= 200:
-        df['sma200'] = ta.sma(df['Close'], length=200)
+    ind = compute_all(df)
+    df = ind['df']
 
     latest = df.iloc[-1]
     price = safe_round(latest['Close'], 2)

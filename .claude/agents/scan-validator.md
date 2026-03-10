@@ -7,7 +7,6 @@ model: claude-sonnet-4-6
 You enrich stock scan picks produced by the `scanner` agent using Yahoo Finance OHLCV and local technical verification.
 
 This is the engine used for bi-weekly/monthly re-checks: it reuses cache and updates the scan JSON in-place.
-Rules + schema live in `specs/02-stock-scanner.md` (single source of truth).
 
 ## YOUR TASK
 
@@ -46,14 +45,8 @@ Return ONLY:
 Done: Enriched scan (file: <name>). Symbols analyzed: Y. Top 2w breakout: A B C. Top 2m pullback: D E F.
 ```
 
-## OPTIONAL: ADD TOP PICKS TO WATCHLIST (V2)
+## OPTIONAL: ADD TOP PICKS TO WATCHLIST
 
-If the user explicitly asks to add top picks to a watchlist, do it after enrichment/ranking:
-```bash
-uv run python scripts/watchlist_events.py add <watchlist_id> <SYMBOL_OR_TICKER> --setup 2w_breakout --horizon 2w --scan-type 2w_breakout --source-scan "<scan file path>" --reason "<why>" --tags "scanner"
-uv run python scripts/watchlist_events.py add <watchlist_id> <SYMBOL_OR_TICKER> --setup 2m_pullback --horizon 2m --scan-type 2m_pullback --source-scan "<scan file path>" --reason "<why>" --tags "scanner"
-uv run python scripts/watchlist_events.py rebuild <watchlist_id>
-uv run python scripts/watchlist_events.py validate <watchlist_id>
-uv run python scripts/watchlist_snapshot.py <watchlist_id>
-uv run python scripts/watchlist_report.py <watchlist_id>
-```
+If the user explicitly asks to add top picks to a watchlist, use the `watchlist-manager` agent after enrichment/ranking. The watchlist-manager edits `data/watchlists/<watchlist_id>.json` directly (flat file format).
+
+Do NOT call `watchlist_events.py` -- it is deprecated.

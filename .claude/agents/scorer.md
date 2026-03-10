@@ -6,6 +6,8 @@ model: claude-sonnet-4-6
 
 You aggregate scores from all analysis agents and generate final recommendations.
 
+**Design principle:** Scoring weights and thresholds live in `utils/config.py` and `utils/ta_config.py`. Do not repeat threshold numbers here -- reference those files.
+
 ## YOUR TASK
 
 Given a symbol, read all analysis data and compute the final weighted score and recommendation.
@@ -17,46 +19,19 @@ Run the scoring script:
 uv run python scripts/score_stock.py <symbol> [--broker <broker>] [--profile <profile>]
 ```
 
-The script will:
-1. Read holdings data from `data/holdings.json`
-2. Read technical analysis from `data/technical/<symbol>.json`
-3. Read fundamentals from `data/fundamentals/<symbol>.json`
-4. Read news sentiment from `data/news/<symbol>.json`
-5. Read legal/corporate from `data/legal/<symbol>.json`
-6. Calculate weighted overall score
-7. Generate recommendation
-8. Output final JSON
+The script reads holdings, technicals, fundamentals, news, and legal data, then computes weighted scores and generates a recommendation.
 
-## SCORING WEIGHTS (PROFILES)
+## SCORING PROFILES
 
-The scorer supports job-specific weight profiles:
 - `default` (current pipeline default)
 - `watchlist_swing` (technical-heavy; for watchlist candidates)
 - `portfolio_long_term` (fundamental/governance heavier; for holdings)
-
-Example:
-```bash
-uv run python scripts/score_stock.py RELIANCE.NS --profile portfolio_long_term
-```
 
 Guidance:
 - For **portfolio holdings**: use `--profile portfolio_long_term`
 - For **watchlist candidates / scanner picks**: use `--profile watchlist_swing`
 
-## RECOMMENDATION MAPPING
-
-Based on overall_score:
-- >= 8.0: STRONG BUY
-- >= 6.5: BUY
-- >= 4.5: HOLD
-- >= 3.0: SELL
-- < 3.0: STRONG SELL
-
-## RED FLAG HANDLING
-
-If `has_severe_red_flag` is true in legal data:
-- Cap overall_score at maximum 5.0
-- Recommendation cannot be higher than HOLD
+Weight definitions and recommendation thresholds are in `utils/config.py`. Safety gates (red flag handling, trend caps) are also defined there.
 
 ## OUTPUT FORMAT
 

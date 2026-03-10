@@ -1,8 +1,8 @@
 # Architecture
 
-**Portfolio Analyzer** — deterministic scripts + Claude Code AI agents.
+**Portfolio Analyzer** -- deterministic scripts + Claude Code AI agents.
 
-> Scripts do transforms. Agents do thinking.
+> Scripts do transforms. Agents do thinking. Thresholds live in `utils/ta_config.py`.
 
 ---
 
@@ -10,9 +10,9 @@
 
 The system is split into three primary jobs:
 
-1. **Stock Scanner + Watchlists** — discover candidates, rank by OHLCV confluence, track with full context
-2. **Portfolio Analysis** — import holdings, compute technicals, research, score, archive reports
-3. **IPO Scanner** — maintain a versioned IPO database, research, score
+1. **Stock Scanner + Watchlists** -- discover candidates, rank by OHLCV confluence, track with full context
+2. **Portfolio Analysis** -- import holdings, compute technicals, research, score, archive reports
+3. **IPO Scanner** -- maintain a versioned IPO database, research, score
 
 All workflows follow the same pattern: agents decide *what/why*, deterministic scripts execute *state writes*.
 
@@ -22,12 +22,16 @@ All workflows follow the same pattern: agents decide *what/why*, deterministic s
 
 ```
 portfolio-analyzer/
-├── .claude/agents/           # AI agent definitions (19 agents)
+├── .claude/agents/           # AI agent definitions
 ├── scripts/                  # Deterministic Python scripts
-├── utils/                    # Shared config + helpers
-├── specs/                    # Canonical schemas and rules
+│   └── ta/                   # Modular TA indicator scripts
+├── utils/                    # Shared computation + config
+│   ├── data.py               # Data access (load/save watchlists, holdings, OHLCV)
+│   ├── ta_config.py          # All TA thresholds (RSI zones, StochRSI, ADX, etc.)
+│   ├── indicators.py         # Shared indicator computation functions
+│   └── config.py             # Scoring weights, recommendation thresholds
 ├── docs/                     # Scoring, indicators, data-source docs
-├── dashboard/                # Static HTML dashboard (index.html loads CSV)
+├── dashboard/                # TypeScript/Express dashboard (port 3323 locally; public/ served statically on GitHub Pages)
 ├── input/                    # Drop broker CSV exports here
 ├── output/                   # Global analysis CSV (compile_report, no portfolio filter)
 ├── data/
@@ -38,12 +42,12 @@ portfolio-analyzer/
 │   │   ├── report.md         # Latest markdown report (agent-written)
 │   │   ├── reports/          # Archived reports: DD-MM-YYYY-slug.md
 │   │   └── snapshots/        # Per-run score snapshots
-│   ├── watchlists/<id>/
-│   │   ├── events.jsonl      # Source of truth (append-only)
-│   │   ├── watchlist.json    # Materialized view (rebuilt from events)
-│   │   └── snapshots/        # Per-run snapshots
+│   ├── watchlists/
+│   │   ├── default.json      # Default watchlist (flat file)
+│   │   └── <id>.json         # Any watchlist (flat file)
 │   ├── scans/                # scan_*.json (scanner output)
 │   ├── technical/            # <symbol>.json (portfolio technicals)
+│   ├── ta/                   # <symbol>_<indicator>.json (modular TA)
 │   ├── scan_technical/       # <symbol>.json (scanner technicals)
 │   ├── fundamentals/         # <symbol>.json (web research)
 │   ├── news/                 # <symbol>.json (news sentiment)
@@ -55,7 +59,6 @@ portfolio-analyzer/
 │       ├── ledger.jsonl      # All logged suggestions (append-only)
 │       └── outcomes/         # YYYY-MM.jsonl monthly resolution files
 ├── cache/ohlcv/              # <symbol>.parquet (18h cache, never committed)
-├── main.py                   # Placeholder entry point
 └── pyproject.toml            # Python 3.13+ deps: yfinance, pandas, pandas-ta, pyarrow
 ```
 
@@ -63,18 +66,18 @@ portfolio-analyzer/
 
 ## All Agents
 
-Agents live in `.claude/agents/*.md`. They orchestrate workflows and do web research. They never write data directly — they call scripts.
+Agents live in `.claude/agents/*.md`. They orchestrate workflows and do web research. They never write data directly -- they call scripts.
 
 ### Portfolio Workflow
 
 | Agent | Description | Key Scripts Called |
 |-------|-------------|-------------------|
-| `portfolio-analyzer` | End-to-end: import → fetch → technicals → research → score → report → snapshot → archive | `fetch_all.py`, `technical_all.py`, `research_status.py`, `score_all.py`, `compile_report.py`, `portfolio_snapshot.py`, `portfolio_report_archive.py` |
+| `portfolio-analyzer` | End-to-end: import -> fetch -> technicals -> research -> score -> report -> snapshot -> archive | `fetch_all.py`, `technical_all.py`, `research_status.py`, `score_all.py`, `compile_report.py`, `portfolio_snapshot.py`, `portfolio_report_archive.py` |
 | `portfolio-importer` | Universal CSV import (any format, India/US) | `portfolio_importer.py`, `holdings_validate.py` |
-| `csv-parser` | Zerodha/Groww CSV parsing → canonical holdings JSON | `parse_csv.py`, `holdings_validate.py` |
+| `csv-parser` | Zerodha/Groww CSV parsing -> canonical holdings JSON | `parse_csv.py`, `holdings_validate.py` |
 | `portfolio-watcher` | Lightweight monitoring: signals with context (not hard gates) | `fetch_all.py`, `technical_all.py`, `watch_portfolio.py`, `watchlist_snapshot.py` |
 | `data-fetcher` | Fetch OHLCV from Yahoo Finance for a symbol | `fetch_ohlcv.py` |
-| `technical-analyst` | Compute RSI, MACD, SMA, Bollinger, ADX, Volume | `technical_analysis.py` |
+| `technical-analyst` | Run `technical_all.py`; interpret signals (thresholds in `utils/ta_config.py`) | `technical_all.py`, `scripts/ta/*.py` |
 
 ### Research
 
@@ -83,13 +86,13 @@ Agents live in `.claude/agents/*.md`. They orchestrate workflows and do web rese
 | `fundamentals-researcher` | P/E, revenue growth, quarterly results via web search | `data/fundamentals/<symbol>.json` |
 | `news-sentiment` | Recent news + analyst sentiment via web search | `data/news/<symbol>.json` |
 | `legal-corporate` | Legal issues, red flags, corporate actions via web search | `data/legal/<symbol>.json` |
-| `scorer` | Aggregate all scores → final recommendation | `scripts/score_stock.py` → `data/scores/<symbol>.json` |
+| `scorer` | Aggregate all scores -> final recommendation (weights in `utils/config.py`) | `scripts/score_stock.py` -> `data/scores/<symbol>.json` |
 
 ### Scanner
 
 | Agent | Description | Key Scripts |
 |-------|-------------|-------------|
-| `scanner` | 5-type web search discovery + OHLCV confluence ranking | `validate_scan.py`, `watchlist_events.py` |
+| `scanner` | 5-type web search discovery + OHLCV confluence ranking | `validate_scan.py` |
 | `scan-validator` | Enrich existing scan with OHLCV confluence; annotate + rank | `validate_scan.py` |
 | `breakout-crosscheck` | Review `2w_breakout` shortlist from enriched scan (no web search) | reads scan JSON |
 | `reversal-crosscheck` | Review `support_reversal` shortlist from enriched scan (no web search) | reads scan JSON |
@@ -99,7 +102,7 @@ Agents live in `.claude/agents/*.md`. They orchestrate workflows and do web rese
 
 | Agent | Description | Key Scripts |
 |-------|-------------|-------------|
-| `watchlist-manager` | Event management: add/remove/note/rebuild/validate/snapshot (no web search) | `watchlist_events.py`, `watchlist_snapshot.py`, `watchlist_report.py` |
+| `watchlist-manager` | Flat file management: add/remove stocks, create watchlists (no web search) | Edits `data/watchlists/<id>.json` directly; `watchlist_snapshot.py`, `watchlist_report.py` |
 
 ### IPO
 
@@ -117,12 +120,12 @@ Agents live in `.claude/agents/*.md`. They orchestrate workflows and do web rese
 
 | Script | Purpose | Key Flags |
 |--------|---------|-----------|
-| `portfolio_importer.py` | Universal CSV import → canonical holdings JSON | `--portfolio-id`, `--country`, `--platform` |
-| `parse_csv.py` | Zerodha/Groww broker CSV → holdings JSON | positional file(s) |
+| `portfolio_importer.py` | Universal CSV import -> canonical holdings JSON | `--portfolio-id`, `--country`, `--platform` |
+| `parse_csv.py` | Zerodha/Groww broker CSV -> holdings JSON | positional file(s) |
 | `holdings_validate.py` | Normalize + validate holdings JSON | `--portfolio-id`, `--country`, `--platform` |
 | `portfolio_snapshot.py` | Create timestamped portfolio snapshot from scores | `--portfolio-id`, `--run-id` |
 | `portfolio_report_archive.py` | Archive report.md with date-stamp; list previous reports | `--portfolio-id`, `--list`, `--json` |
-| `compile_report.py` | Compile scores → CSV analysis report | `--portfolio-id` |
+| `compile_report.py` | Compile scores -> CSV analysis report | `--portfolio-id` |
 | `research_status.py` | Check research freshness (30-day staleness gate) | `--holdings`, `--days`, `--out` |
 
 ### Data + Analysis
@@ -130,31 +133,28 @@ Agents live in `.claude/agents/*.md`. They orchestrate workflows and do web rese
 | Script | Purpose | Key Flags |
 |--------|---------|-----------|
 | `fetch_ohlcv.py` | Fetch 1yr OHLCV for one symbol; parquet cache | positional symbol |
-| `fetch_us_ohlcv.py` | US-specific OHLCV fetch | positional symbol |
-| `fetch_all.py` | Batch OHLCV fetch (holdings and/or watchlist) | `--holdings`, `--watchlist-id`, `--symbols` |
+| `fetch_all.py` | Batch OHLCV fetch (holdings and/or watchlist) | `--holdings`, `--watchlist-id`, `--all-watchlists`, `--symbols` |
 | `technical_analysis.py` | Single-symbol technical indicators | positional symbol |
-| `compute_technicals.py` | Core indicator computation module | (imported by others) |
 | `deep_technical_analysis.py` | Extended/deeper technical analysis | positional symbol |
-| `technical_all.py` | Batch technical analysis | `--holdings`, `--watchlist-id` |
+| `technical_all.py` | Batch technical analysis | `--holdings`, `--watchlist-id`, `--all-watchlists` |
 | `score_stock.py` | Score one stock from all analysis data | positional symbol, `--broker`, `--profile` |
 | `score_all.py` | Batch scoring for all holdings | `--profile` |
-| `watch_portfolio.py` | Lightweight portfolio watcher; writes to `data/watcher/` | `--holdings`, `--watchlist-id`, `--symbols` |
+| `watch_portfolio.py` | Lightweight portfolio watcher; writes to `data/watcher/` | `--holdings`, `--watchlist-id`, `--all-watchlists`, `--symbols` |
 | `clean.py` | Clear stale/old data files | various |
 
 ### Scanner
 
 | Script | Purpose | Key Flags |
 |--------|---------|-----------|
-| `save_scan.py` | Save aggregated scan results to `data/scans/scan_*.json` | (imported as module) |
 | `verify_scan.py` | OHLCV-based technical verification for scan symbols | various |
 | `validate_scan.py` | Enrich scan with OHLCV confluence; compute setup scores; rank | `--enrich-setups`, `--rank`, `--top`, `--us`, `--output` |
-| `scan_and_log.py` | **Run enrichment → log top picks to suggestions ledger** | `--scan`, `--top`, `--setup`, `--dry-run` |
+| `scan_and_log.py` | **Run enrichment -> log top picks to suggestions ledger** | `--scan`, `--top`, `--setup`, `--dry-run` |
 
 ### Watchlist
 
 | Script | Purpose | Key Flags |
 |--------|---------|-----------|
-| `watchlist_events.py` | Append/rebuild/validate events | `add`, `remove`, `note`, `rebuild`, `validate` subcommands |
+| `watchlist_events.py` | **(Deprecated)** Append/rebuild/validate events | Do not call |
 | `watchlist_snapshot.py` | Create per-run snapshot of watchlist state | positional `watchlist_id` |
 | `watchlist_report.py` | Render history report for a watchlist | positional `watchlist_id` |
 
@@ -181,109 +181,105 @@ Agents live in `.claude/agents/*.md`. They orchestrate workflows and do web rese
 
 ```
 User: "run stock scanner"
-     ↓
+     |
 scanner agent
-  → WebSearch (5 types: RSI oversold, MACD crossover, golden cross, volume breakout, 52w high)
-  → Collect symbols + notes into scan JSON
-  → Write data/scans/scan_YYYYMMDD_HHMMSS.json
-  → uv run python scripts/validate_scan.py <scan_file> --enrich-setups --rank
-     ↓
-     For each symbol: fetch OHLCV → compute indicators → score 3 setups
-       • 2m_pullback  (trend-following, 1-2 month hold)
-       • 2w_breakout  (breakout continuation, 1-2 week hold)
-       • support_reversal (bounce at support, higher risk)
-     → Writes rankings back into scan JSON (in-place)
-     ↓
+  -> WebSearch (5 types: RSI oversold, MACD crossover, golden cross, volume breakout, 52w high)
+  -> Collect symbols + notes into scan JSON
+  -> Write data/scans/scan_YYYYMMDD_HHMMSS.json
+  -> uv run python scripts/validate_scan.py <scan_file> --enrich-setups --rank
+     |
+     For each symbol: fetch OHLCV -> compute indicators -> score 3 setups
+       * 2m_pullback  (trend-following, 1-2 month hold)
+       * 2w_breakout  (breakout continuation, 1-2 week hold)
+       * support_reversal (bounce at support, higher risk)
+     -> Writes rankings back into scan JSON (in-place)
+     |
 (Optional) breakout-crosscheck / reversal-crosscheck agents review shortlists
-(Optional) Add top picks to watchlist via watchlist_events.py add
-(Optional) uv run python scripts/scan_and_log.py → log picks to suggestions ledger
+(Optional) Add top picks to watchlist via watchlist-manager agent (flat file edit)
+(Optional) uv run python scripts/scan_and_log.py -> log picks to suggestions ledger
 ```
 
-### B. Scan → Suggestion → Resolution Flow
+### B. Scan -> Suggestion -> Resolution Flow
 
 ```
 scan_and_log.py
-  → Reads latest enriched scan JSON
-  → For each top pick (2w_breakout + 2m_pullback rankings):
-      • Derives entry_zone, stop_loss, targets from OHLCV metrics
-      • Calls suggestions_log.py → appends to data/suggestions/ledger.jsonl
-     ↓
+  -> Reads latest enriched scan JSON
+  -> For each top pick (2w_breakout + 2m_pullback rankings):
+      * Derives entry_zone, stop_loss, targets from OHLCV metrics
+      * Calls suggestions_log.py -> appends to data/suggestions/ledger.jsonl
+     |
 (Periodic) suggestions_resolve.py
-  → Reads open suggestions from ledger.jsonl
-  → Fetches historical prices since suggestion date
-  → Checks target/stop hits, elapsed time
-  → Appends outcomes to data/suggestions/outcomes/YYYY-MM.jsonl
-     ↓
+  -> Reads open suggestions from ledger.jsonl
+  -> Fetches historical prices since suggestion date
+  -> Checks target/stop hits, elapsed time
+  -> Appends outcomes to data/suggestions/outcomes/YYYY-MM.jsonl
+     |
 suggestions_report.py
-  → Reads ledger.jsonl + outcomes/
-  → Prints win rate, avg P&L by confidence/strategy
+  -> Reads ledger.jsonl + outcomes/
+  -> Prints win rate, avg P&L by confidence/strategy
 ```
 
 ### C. Full Portfolio Analysis Flow
 
 ```
 User: "analyze my portfolio from input/zerodha.csv"
-     ↓
+     |
 portfolio-analyzer agent
-  → portfolio_importer.py (or parse_csv.py + holdings_validate.py)
-     → writes data/portfolios/<id>/holdings.json
-  → fetch_all.py --holdings
-     → fetch_ohlcv.py per symbol → cache/ohlcv/<symbol>.parquet
-  → technical_all.py --holdings
-     → technical_analysis.py per symbol → data/technical/<symbol>.json
-  → research_status.py --holdings --days 30
-     → outputs data/runs/<run_id>/research_status.json
-     → for each symbol: missing/stale fundamentals/news/legal
-  → For missing/stale: run research agents (fundamentals-researcher, news-sentiment, legal-corporate)
-     → write data/fundamentals/, data/news/, data/legal/
-  → score_all.py --profile portfolio_long_term
-     → score_stock.py per symbol → data/scores/<symbol>.json
-  → compile_report.py --portfolio-id <id>
-     → data/portfolios/<id>/reports/analysis_YYYYMMDD_HHMMSS.csv
-  → portfolio_snapshot.py --portfolio-id <id>
-     → data/portfolios/<id>/snapshots/<run_id>.json
-  → Agent writes data/portfolios/<id>/report.md (narrative, not deterministic)
-  → portfolio_report_archive.py --portfolio-id <id>
-     → archives report.md, lists previous reports
+  -> portfolio_importer.py (or parse_csv.py + holdings_validate.py)
+     -> writes data/portfolios/<id>/holdings.json
+  -> fetch_all.py --holdings --all-watchlists
+     -> fetch_ohlcv.py per symbol -> cache/ohlcv/<symbol>.parquet
+  -> technical_all.py --holdings --all-watchlists
+     -> technical_analysis.py per symbol -> data/technical/<symbol>.json
+  -> research_status.py --holdings --days 30
+     -> outputs data/runs/<run_id>/research_status.json
+     -> for each symbol: missing/stale fundamentals/news/legal
+  -> For missing/stale: run research agents (fundamentals-researcher, news-sentiment, legal-corporate)
+     -> write data/fundamentals/, data/news/, data/legal/
+  -> score_all.py --profile portfolio_long_term
+     -> score_stock.py per symbol -> data/scores/<symbol>.json
+  -> compile_report.py --portfolio-id <id>
+     -> data/portfolios/<id>/reports/analysis_YYYYMMDD_HHMMSS.csv
+  -> portfolio_snapshot.py --portfolio-id <id>
+     -> data/portfolios/<id>/snapshots/<run_id>.json
+  -> Agent writes data/portfolios/<id>/report.md (narrative, not deterministic)
+  -> portfolio_report_archive.py --portfolio-id <id>
+     -> archives report.md, lists previous reports
 ```
 
 ### D. Watchlist Management Flow
 
 ```
 User: "add RVNL to watchlist swing_trades"
-     ↓
+     |
 watchlist-manager agent
-  → watchlist_events.py add swing_trades RVNL.NS \
-       --setup 2w_breakout --horizon 2w \
-       --entry-zone "240-250" --invalidation "close below 230" \
-       --reason "Strong volume near breakout"
-     → Appends event to data/watchlists/swing_trades/events.jsonl
-  → watchlist_events.py rebuild swing_trades
-     → Rebuilds data/watchlists/swing_trades/watchlist.json from events
-  → watchlist_events.py validate swing_trades
-  → watchlist_snapshot.py swing_trades
-     → data/watchlists/swing_trades/snapshots/<run_id>.json
+  -> Read data/watchlists/swing_trades.json
+  -> Append entry with all judgment fields (thesis, entry_zone, stop_loss, target, horizon)
+  -> Set status: "WATCHING", increment file_revision, update updated_at
+  -> Write data/watchlists/swing_trades.json
+  -> watchlist_snapshot.py swing_trades
+     -> data/watchlists/swing_trades/snapshots/<run_id>.json (if applicable)
 ```
 
 ### E. IPO Flow
 
 ```
 User: "scan upcoming IPOs"
-     ↓
+     |
 ipo-scanner agent
-  → WebSearch (NSE/BSE/Moneycontrol/Chittorgarh)
-  → Merge into data/ipos.json (versioned, never deletes)
-  → validate_ipos.py
-  → render_ipos.py
-     ↓
+  -> WebSearch (NSE/BSE/Moneycontrol/Chittorgarh)
+  -> Merge into data/ipos.json (versioned, never deletes)
+  -> validate_ipos.py
+  -> render_ipos.py
+     |
 User: "research <IPO name>"
-     ↓
-ipo-researcher agent → updates data/ipos.json research section
-     ↓
+     |
+ipo-researcher agent -> updates data/ipos.json research section
+     |
 User: "score IPOs"
-     ↓
-ipo-scorer agent → writes score block into data/ipos.json record
-  → validate_ipos.py + render_ipos.py
+     |
+ipo-scorer agent -> writes score block into data/ipos.json record
+  -> validate_ipos.py + render_ipos.py
 ```
 
 ---
@@ -299,15 +295,16 @@ ipo-scorer agent → writes score block into data/ipos.json record
 
 Scan files are enriched **in-place** by `validate_scan.py`. After enrichment, the file gains `validation.rankings`, `validation.setups_by_symbol`, `validation.results_by_symbol`.
 
-### Watchlists (v2)
+### Watchlists
 
 | File | Format | Write | Notes |
 |------|--------|-------|-------|
-| `events.jsonl` | JSONL (append-only) | `watchlist_events.py` | Source of truth; never overwrite |
-| `watchlist.json` | JSON | `watchlist_events.py rebuild` | Materialized view; always derived |
-| `snapshots/<run_id>.json` | JSON | `watchlist_snapshot.py` | Point-in-time state |
+| `data/watchlists/<id>.json` | JSON | `watchlist-manager` agent (direct edit) | Flat file, single source of truth |
+| Snapshots (if applicable) | JSON | `watchlist_snapshot.py` | Point-in-time state |
 
-Event types: `ADD`, `REMOVE`, `NOTE`. Each event captures: symbol, setup, horizon, entry_zone, invalidation, timing, reentry, reason, tags, source scan.
+Watchlist entries have: ticker, company_name, market, exchange, status, added_at, thesis, entry_zone, stop_loss, target, horizon, score, price_at_add, catalysts.
+
+`watchlist_events.py` is deprecated -- do not use.
 
 ### Portfolio
 
@@ -345,7 +342,7 @@ Outcome fields: `suggestion_id`, `status` (won/lost/expired/open), `pnl_pct`, `h
 
 ## Scoring
 
-All scoring config lives in `utils/config.py`.
+All scoring config lives in `utils/config.py`. TA thresholds live in `utils/ta_config.py`.
 
 ### Component Weights (default)
 
@@ -353,24 +350,24 @@ All scoring config lives in `utils/config.py`.
 |-----------|---------|----------------------|-------------------|
 | Technical | 35% | lower | higher |
 | Fundamental | 30% | higher | lower |
-| News Sentiment | 20% | — | — |
-| Legal/Corporate | 15% | — | — |
+| News Sentiment | 20% | -- | -- |
+| Legal/Corporate | 15% | -- | -- |
 
 ### Recommendation Thresholds
 
 | Score | Recommendation |
 |-------|----------------|
 | 8.0+ | STRONG BUY |
-| 6.5–7.9 | BUY |
-| 4.5–6.4 | HOLD |
-| 3.0–4.4 | SELL |
+| 6.5-7.9 | BUY |
+| 4.5-6.4 | HOLD |
+| 3.0-4.4 | SELL |
 | < 3.0 | STRONG SELL |
 
 ### Safety Gates
 
-- Trend score < 5 → cap at HOLD (no buying into downtrends)
-- High news + low technicals → BUY → HOLD (no hype-only buys)
-- `has_severe_red_flag` in legal data → cap at 5.0, max HOLD
+- Trend score < 5 -> cap at HOLD (no buying into downtrends)
+- High news + low technicals -> BUY -> HOLD (no hype-only buys)
+- `has_severe_red_flag` in legal data -> cap at 5.0, max HOLD
 - STRONG BUY requires aligned trend + MACD + ADX
 
 ### Scanner Setup Scoring (in `SCAN_SETUP_RULES`)
@@ -400,23 +397,13 @@ There is no committed cron configuration in this repo. Scheduled runs are expect
 
 ## How to Add a Stock to a Watchlist
 
-```bash
-# 1. Add the event (agent fills in the judgment fields)
-uv run python scripts/watchlist_events.py add <watchlist_id> <SYMBOL.NS> \
-  --setup 2w_breakout \
-  --horizon 2w \
-  --entry-zone "240-250" \
-  --invalidation "close below 230" \
-  --reason "Strong volume, near breakout level" \
-  --tags "sector,theme"
+The `watchlist-manager` agent edits `data/watchlists/<watchlist_id>.json` directly:
 
-# 2. Rebuild + validate the materialized view
-uv run python scripts/watchlist_events.py rebuild <watchlist_id>
-uv run python scripts/watchlist_events.py validate <watchlist_id>
-
-# 3. Write a per-run snapshot
-uv run python scripts/watchlist_snapshot.py <watchlist_id>
-```
+1. Read the flat JSON file
+2. Append a new entry with all judgment fields (thesis, entry_zone, stop_loss, target, horizon)
+3. Set `status: "WATCHING"`, increment `file_revision`, update `updated_at`
+4. Write the file back
+5. Optionally: `uv run python scripts/watchlist_snapshot.py <watchlist_id>`
 
 Or just say "add RVNL to watchlist swing_trades" to the `watchlist-manager` agent.
 
@@ -454,17 +441,16 @@ uv run python scripts/scan_and_log.py --dry-run  # preview without writing
 ### Wiring Gaps
 
 - **No cron is configured** in the repo. The scanner + `scan_and_log.py` must be triggered manually or via external scheduler.
-- **`main.py` is a placeholder** — it just prints "Hello". No CLI entry point exists for end-users who don't use Claude Code.
-- **`scan_and_log.py` entry/stop/target estimates are heuristic** — they use simple % offsets from current price + OHLCV anchors. They are starting points, not precise levels.
-- **`fundamental-scanner` output is not validated by `validate_scan.py`** — the fundamental scan JSON uses a different schema (`matches[]` vs `scans.{type}.matches[]`) and won't work with `validate_scan.py latest`.
+- **`scan_and_log.py` entry/stop/target estimates are heuristic** -- they use simple % offsets from current price + OHLCV anchors. They are starting points, not precise levels.
+- **`fundamental-scanner` output is not validated by `validate_scan.py`** -- the fundamental scan JSON uses a different schema (`matches[]` vs `scans.{type}.matches[]`) and won't work with `validate_scan.py latest`.
 
-### Missing Features (from TODO.md)
+### Missing Features
 
 - Dashboard: load and display snapshots over time
 - Dashboard: show watchlist event history
 - Sector/industry tags in scans (scan files don't capture sector yet)
 - Diversification-aware shortlists (no cross-position concentration check)
-- IPO → watchlist integration post-listing (manual today)
+- IPO -> watchlist integration post-listing (manual today)
 
 ### Research Coverage
 
@@ -473,5 +459,5 @@ uv run python scripts/scan_and_log.py --dry-run  # preview without writing
 
 ### Suggestions System
 
-- Outcomes are checked against Yahoo Finance historical data — subject to the same limitations (adjusted prices, gaps for thinly traded stocks)
+- Outcomes are checked against Yahoo Finance historical data -- subject to the same limitations (adjusted prices, gaps for thinly traded stocks)
 - No de-duplication guard in the ledger; `scan_and_log.py` will re-log the same symbol if run twice on the same scan

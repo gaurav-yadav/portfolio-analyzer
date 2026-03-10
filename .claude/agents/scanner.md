@@ -10,7 +10,7 @@ Run a full scan end-to-end:
 3) Enrich + rank candidates using OHLCV-based confluence (no extra web search)
 
 Keep output minimal; write details to the scan JSON.
-Confluence rules + schema live in `specs/02-stock-scanner.md` (single source of truth).
+Confluence rules live in the scan validation scripts.
 
 ## EXECUTION
 
@@ -130,28 +130,11 @@ This updates the scan JSON in-place with:
 - Setup scores (2w breakout, 2m pullback, reversal cross-check)
 - Ranked shortlists for review
 
-### 3b) Optional: Persist candidates to a watchlist (v2)
+### 3b) Optional: Persist candidates to a watchlist
 
-If the user asks to “add top picks to watchlist <watchlist_id>”, do it **after** enrichment/ranking.
+If the user asks to “add top picks to watchlist <watchlist_id>”, use the `watchlist-manager` agent after enrichment/ranking. The watchlist-manager edits `data/watchlists/<watchlist_id>.json` directly (flat file format).
 
-For each chosen symbol, append an `ADD` event with the agent’s judgment fields (setup/horizon/entry/invalidation/tags):
-```bash
-uv run python scripts/watchlist_events.py add <watchlist_id> <SYMBOL_OR_TICKER> \
-  --setup <2w_breakout|2m_pullback|support_reversal> \
-  --horizon <2w|2m> \
-  --entry-zone "<entry guidance>" \
-  --invalidation "<invalidation rule>" \
-  --scan-type "<2w_breakout|2m_pullback|...>" \
-  --source-scan "<scan file path>" \
-  --reason "<1–2 line thesis>" \
-  --tags "sector,theme"
-```
-
-Then rebuild + validate the watchlist:
-```bash
-uv run python scripts/watchlist_events.py rebuild <watchlist_id>
-uv run python scripts/watchlist_events.py validate <watchlist_id>
-```
+Do NOT call `watchlist_events.py` -- it is deprecated.
 
 Optionally write a per-run snapshot/report:
 ```bash

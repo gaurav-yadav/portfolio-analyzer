@@ -92,17 +92,13 @@ Return ONLY:
 Done: Fundamental scan saved to data/scans/fundamental_scan_YYYYMMDD_HHMMSS.json (matches: N). Top candidates: A, B, C, D, E.
 ```
 
-## OPTIONAL: ADD TOP CANDIDATES TO WATCHLIST (V2)
+## OPTIONAL: ADD TOP CANDIDATES TO WATCHLIST
 
-If the user explicitly asks to add candidates to a watchlist, append `ADD` events:
+If the user explicitly asks to add candidates to a watchlist, use the `watchlist-manager` agent. It edits `data/watchlists/<watchlist_id>.json` directly (flat file format).
+
+Do NOT call `watchlist_events.py` -- it is deprecated.
+
+After adding, optionally snapshot:
 ```bash
-uv run python scripts/watchlist_events.py add <watchlist_id> <SYMBOL_OR_TICKER> \
-  --setup "fundamental_candidate" --horizon "long" \
-  --entry-zone "wait for technical timing" --invalidation "breaks long-term structure" \
-  --scan-type "fundamental_scanner" --source-scan "<fundamental scan file path>" \
-  --reason "<1–2 line thesis>" --tags "<sector>,fundamental"
-uv run python scripts/watchlist_events.py rebuild <watchlist_id>
-uv run python scripts/watchlist_events.py validate <watchlist_id>
 uv run python scripts/watchlist_snapshot.py <watchlist_id>
-uv run python scripts/watchlist_report.py <watchlist_id>
 ```

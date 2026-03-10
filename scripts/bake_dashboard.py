@@ -7,11 +7,17 @@ dashboard/public/data.js. The dashboard detects this and uses it
 instead of API calls (for static hosting).
 
 Usage:
-    uv run python scripts/bake_dashboard.py
-    uv run python scripts/bake_dashboard.py --push   # also git add/commit/push
+    uv run python scripts/bake_dashboard.py                    # bake only (uses existing technical data)
+    uv run python scripts/bake_dashboard.py --refresh          # fetch OHLCV + recompute technicals, then bake
+    uv run python scripts/bake_dashboard.py --refresh --push   # refresh + bake + push to GitHub Pages
 
 Excludes: holdings, portfolios, input CSVs (privacy)
 Includes: watchlists, suggestions, technical scores, TA indicators
+
+--refresh pipeline:
+  1. fetch_ohlcv.py for all watchlist symbols (18h freshness cache — safe to always run)
+  2. technical_all.py --symbols ... (recomputes RSI/MACD/SMA/BB/ADX/StochRSI/patterns)
+  3. bake_dashboard.py (reads updated data/ files → dashboard/public/data.js)
 """
 
 import json
@@ -129,40 +135,20 @@ def load_watchlists() -> list:
     if not d.exists():
         return []
 
-    # Collect all stocks by watchlist id, merging both formats
-    by_id: dict = {}
-
-    def merge_into(wl_id: str, data: dict):
-        stocks = data.get("watchlist") or data.get("stocks") or []
-        if wl_id not in by_id:
-            by_id[wl_id] = {"meta": data, "stocks": {}}
-        for s in stocks:
-            ticker = s.get("ticker") or s.get("symbol") or ""
-            if ticker:
-                by_id[wl_id]["stocks"][ticker] = s  # later write wins for same ticker
-
-    # Format 1: flat files — data/watchlists/<name>.json
-    for f in d.glob("*.json"):
-        data = read_json(f)
-        if data:
-            merge_into(f.stem, data)
-
-    # Format 2: subdirs — data/watchlists/<name>/watchlist.json
-    for subdir in d.iterdir():
-        if not subdir.is_dir():
-            continue
-        wl_file = subdir / "watchlist.json"
-        if wl_file.exists():
-            data = read_json(wl_file)
-            if data:
-                merge_into(subdir.name, data)
-
-    # Build output list
     results = []
-    for wl_id, merged in by_id.items():
-        out = dict(merged["meta"])
-        out["watchlist"] = list(merged["stocks"].values())
-        results.append({"id": wl_id, "data": out})
+    # Flat files: data/watchlists/<name>.json (primary format)
+    for f in sorted(d.glob("*.json")):
+        data = read_json(f)
+        if not data:
+            continue
+        wl_id = f.stem
+        # Normalize entries for frontend
+        for s in (data.get("watchlist") or []):
+            if "ticker" not in s and "symbol" in s:
+                s["ticker"] = s["symbol"]
+            if "market" not in s:
+                s["market"] = "US"
+        results.append({"id": wl_id, "data": data})
     return results
 
 
@@ -228,8 +214,14 @@ def fetch_prices(symbols: list) -> dict:
                 df = data[sym] if len(symbols) > 1 else data
                 if df.empty:
                     continue
-                price = float(df["Close"].iloc[-1])
-                prev  = float(df["Close"].iloc[-2]) if len(df) > 1 else price
+                # Drop NaN closes (market not settled yet) and use last valid
+                closes = df["Close"].dropna()
+                if closes.empty:
+                    continue
+                price = float(closes.iloc[-1])
+                prev  = float(closes.iloc[-2]) if len(closes) > 1 else price
+                if not (price == price):  # NaN check
+                    continue
                 change_pct = round((price - prev) / prev * 100, 2)
                 result[sym] = {"price": round(price, 2), "change_pct": change_pct}
             except Exception:
@@ -240,12 +232,102 @@ def fetch_prices(symbols: list) -> dict:
         return {}
 
 
+def get_watchlist_symbols() -> tuple[list[str], list[str]]:
+    """Extract all active watchlist tickers split by market (IN vs US).
+    Returns (in_symbols, us_symbols) as yfinance-style tickers."""
+    d = DATA / "watchlists"
+    in_syms, us_syms = [], []
+    seen = set()
+
+    def collect(stocks):
+        for s in stocks:
+            if s.get("status") == "REMOVED":
+                continue
+            ticker = (s.get("ticker") or s.get("symbol") or "").strip().upper()
+            if not ticker or ticker in seen:
+                continue
+            seen.add(ticker)
+            market = (s.get("market") or "US").upper()
+            if market == "IN":
+                yf_sym = ticker if "." in ticker else f"{ticker}.NS"
+                in_syms.append(yf_sym)
+            else:
+                us_syms.append(ticker)
+
+    # flat files: data/watchlists/<name>.json (primary format)
+    for f in d.glob("*.json"):
+        data = read_json(f)
+        if data:
+            collect(data.get("watchlist") or data.get("stocks") or [])
+
+    return in_syms, us_syms
+
+
+def refresh_technicals(in_symbols: list[str], us_symbols: list[str]) -> None:
+    """Fetch fresh OHLCV and recompute technical indicators for all watchlist stocks."""
+    all_symbols = in_symbols + us_symbols
+    if not all_symbols:
+        print("  No symbols to refresh.")
+        return
+
+    print(f"\n{'='*55}")
+    print(f"  Refreshing technicals for {len(all_symbols)} symbols")
+    print(f"  IN: {len(in_symbols)}  |  US: {len(us_symbols)}")
+    print(f"{'='*55}")
+
+    # Step 1: Fetch OHLCV (uses 18h freshness cache — safe to call every bake)
+    print("\n[1/2] Fetching OHLCV data...")
+    fetch_script = BASE / "scripts" / "fetch_ohlcv.py"
+    if in_symbols:
+        r = subprocess.run(
+            ["uv", "run", "python", str(fetch_script)] + in_symbols,
+            cwd=BASE, capture_output=True, text=True
+        )
+        ok_count = r.stdout.count("✓") + r.stdout.count("OK") + r.stdout.count("cached")
+        print(f"  IN stocks: {ok_count}/{len(in_symbols)} fetched/cached"
+              + (f" (errors: {r.returncode})" if r.returncode != 0 else ""))
+        if r.returncode != 0 and r.stderr:
+            print(f"  stderr: {r.stderr[:300]}", file=sys.stderr)
+
+    if us_symbols:
+        # US OHLCV: fetch_ohlcv.py also handles US tickers via yfinance
+        r = subprocess.run(
+            ["uv", "run", "python", str(fetch_script)] + us_symbols,
+            cwd=BASE, capture_output=True, text=True
+        )
+        ok_count = r.stdout.count("✓") + r.stdout.count("OK") + r.stdout.count("cached")
+        print(f"  US stocks: {ok_count}/{len(us_symbols)} fetched/cached"
+              + (f" (errors: {r.returncode})" if r.returncode != 0 else ""))
+
+    # Step 2: Recompute technical indicators for all symbols
+    print(f"\n[2/2] Computing technical indicators...")
+    ta_script = BASE / "scripts" / "technical_all.py"
+    r = subprocess.run(
+        ["uv", "run", "python", str(ta_script), "--symbols"] + all_symbols,
+        cwd=BASE, capture_output=True, text=True
+    )
+    # technical_all.py prints progress per symbol to stdout
+    for line in r.stdout.splitlines():
+        if line.strip():
+            print(f"  {line}")
+    if r.returncode != 0 and r.stderr:
+        print(f"  Warnings: {r.stderr[:300]}", file=sys.stderr)
+    print()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--push", action="store_true", help="git add/commit/push after baking")
     parser.add_argument("--no-prices", action="store_true", help="skip live price fetch")
     parser.add_argument("--no-ohlcv", action="store_true", help="skip OHLCV baking")
+    parser.add_argument("--refresh", action="store_true",
+                        help="Fetch fresh OHLCV + recompute technicals for all watchlist stocks before baking")
     args = parser.parse_args()
+
+    # Refresh technicals BEFORE loading any data
+    if args.refresh:
+        in_syms, us_syms = get_watchlist_symbols()
+        refresh_technicals(in_syms, us_syms)
 
     print("Baking dashboard data...")
 
@@ -310,8 +392,8 @@ def main():
     if args.push:
         print("\nPushing to GitHub...")
         cmds = [
-            ["git", "add", "dashboard/public/data.js", "dashboard/public/index.html", "dashboard/public/lib/"],
-            ["git", "commit", "-m", f"chore: bake dashboard data {datetime.now().strftime('%Y-%m-%d %H:%M')}"],
+            ["git", "add", "dashboard/public/data.js", "dashboard/public/index.html", "dashboard/public/app.js", "dashboard/public/app.css", "dashboard/public/lib/"],
+            ["git", "commit", "-m", f"chore: bake dashboard data {datetime.now().strftime('%Y-%m-%d %H:%M')}" + (" [+technicals]" if args.refresh else "")],
             ["git", "push"],
         ]
         for cmd in cmds:

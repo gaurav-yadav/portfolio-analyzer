@@ -20,11 +20,12 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
-import pandas_ta as ta
 
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from utils.indicators import compute_all
+from utils.ta_config import RSI_PERIOD, MACD_FAST, MACD_SLOW, MACD_SIGNAL, BB_PERIOD, BB_STD, ADX_PERIOD, SMA_FAST, SMA_MID, SMA_SLOW
 from utils.helpers import save_json
 from utils.config import DEFAULT_TECHNICAL_WEIGHTS as DEFAULT_WEIGHTS
 
@@ -261,40 +262,19 @@ def compute_technical_indicators(df: pd.DataFrame, weights: dict = None) -> dict
     # Make a copy to avoid modifying original
     df = df.copy()
 
-    # Compute indicators using pandas-ta
-    # RSI(14)
-    df["rsi"] = ta.rsi(df["Close"], length=14)
+    # Compute all indicators via shared computation layer
+    ind = compute_all(df)
+    df = ind['df']
 
-    # MACD(12, 26, 9)
-    macd_result = ta.macd(df["Close"], fast=12, slow=26, signal=9)
-    if macd_result is not None:
-        df["macd"] = macd_result.iloc[:, 0]  # MACD line
-        df["macd_histogram"] = macd_result.iloc[:, 1]  # Histogram
-        df["macd_signal"] = macd_result.iloc[:, 2]  # Signal line
-
-    # SMA(50) and SMA(200)
-    df["sma50"] = ta.sma(df["Close"], length=50)
-    df["sma200"] = ta.sma(df["Close"], length=200) if len(df) >= 200 else pd.Series([float("nan")] * len(df))
-
-    # Bollinger Bands(20, 2)
-    bbands = ta.bbands(df["Close"], length=20, std=2)
-    if bbands is not None:
-        df["bb_lower"] = bbands.iloc[:, 0]
-        df["bb_middle"] = bbands.iloc[:, 1]
-        df["bb_upper"] = bbands.iloc[:, 2]
-        df["bb_bandwidth"] = bbands.iloc[:, 3]
-        df["bb_pctb"] = bbands.iloc[:, 4]
-
-    # ADX(14)
-    adx_result = ta.adx(df["High"], df["Low"], df["Close"], length=14)
-    if adx_result is not None:
-        df["adx"] = adx_result.iloc[:, 0]
-        df["plus_di"] = adx_result.iloc[:, 1]
-        df["minus_di"] = adx_result.iloc[:, 2]
-
-    # Volume ratio vs 20-day average
-    df["volume_sma20"] = ta.sma(df["Volume"], length=20)
-    df["volume_ratio"] = df["Volume"] / df["volume_sma20"]
+    # Map column names for backward compatibility with scoring functions
+    if 'macd_hist' in df.columns:
+        df["macd_histogram"] = df["macd_hist"]
+    if 'vol_sma20' in df.columns:
+        df["volume_sma20"] = df["vol_sma20"]
+    if 'vol_ratio' in df.columns:
+        df["volume_ratio"] = df["vol_ratio"]
+    if 'sma200' not in df.columns:
+        df["sma200"] = pd.Series([float("nan")] * len(df), index=df.index)
 
     # Get latest values
     latest = df.iloc[-1]

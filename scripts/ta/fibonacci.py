@@ -15,13 +15,15 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.indicators import find_swing_points
+from utils.ta_config import FIB_LOOKBACK, FIB_PROXIMITY_PCT, FIB_RATIOS
 from utils.ta_common import (
     load_ohlcv, output_result, get_symbol_from_args,
-    safe_round, log, format_date, find_swing_points
+    safe_round, log, format_date
 )
 
 
-def analyze_fibonacci(df, lookback: int = 60) -> dict:
+def analyze_fibonacci(df, lookback: int = FIB_LOOKBACK) -> dict:
     """Compute Fibonacci retracement levels."""
     recent = df.tail(lookback)
     current_price = safe_round(df['Close'].iloc[-1], 2)
@@ -90,10 +92,10 @@ def analyze_fibonacci(df, lookback: int = 60) -> dict:
         dist_to_618 = abs(current_price - entry_zone_618) / current_price * 100
         dist_to_50 = abs(current_price - entry_zone_50) / current_price * 100
 
-        if dist_to_618 < 2:
+        if dist_to_618 < FIB_PROXIMITY_PCT:
             entry_signal = "at_golden_ratio_618"
             position = "entry_zone"
-        elif dist_to_50 < 2:
+        elif dist_to_50 < FIB_PROXIMITY_PCT:
             entry_signal = "at_50_retracement"
             position = "entry_zone"
         elif current_price < entry_zone_618:

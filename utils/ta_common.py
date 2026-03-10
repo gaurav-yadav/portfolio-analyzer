@@ -1,4 +1,10 @@
-"""Common utilities for technical analysis scripts - DRY principle."""
+"""Common utilities for technical analysis scripts - DRY principle.
+
+NOTE: load_ohlcv() and output_result() delegate to utils.data internally.
+      find_swing_points() delegates to utils.indicators.
+      Kept for backward compatibility — new code should import from
+      utils.data and utils.indicators directly.
+"""
 
 import json
 import sys
@@ -7,6 +13,27 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+# Lazy imports to avoid circular dependency
+# (data.py imports NumpyEncoder from ta_common)
+_data_module = None
+_indicators_module = None
+
+
+def _get_data():
+    global _data_module
+    if _data_module is None:
+        from utils import data as _dm
+        _data_module = _dm
+    return _data_module
+
+
+def _get_indicators():
+    global _indicators_module
+    if _indicators_module is None:
+        from utils import indicators as _im
+        _indicators_module = _im
+    return _indicators_module
 
 
 BASE_PATH = Path(__file__).parent.parent
@@ -43,59 +70,27 @@ def safe_round(val, decimals: int = 4):
 
 
 def load_ohlcv(symbol: str) -> pd.DataFrame:
+    """Load OHLCV data for symbol from parquet cache.
+
+    Delegates to utils.data.load_ohlcv() internally but raises on missing
+    data (backward compat — data layer returns None).
     """
-    Load OHLCV data for symbol from parquet cache.
-
-    Args:
-        symbol: Stock symbol (e.g., AAPL, RELIANCE.NS)
-
-    Returns:
-        DataFrame with OHLCV columns
-
-    Raises:
-        FileNotFoundError: If cache file doesn't exist
-        ValueError: If data is insufficient
-    """
-    # Try exact symbol first
-    path = CACHE_DIR / f"{symbol}.parquet"
-
-    # If not found, try with .NS suffix for Indian stocks
-    if not path.exists() and not any(symbol.endswith(s) for s in ['.NS', '.BO']):
-        path = CACHE_DIR / f"{symbol}.NS.parquet"
-
-    if not path.exists():
+    df = _get_data().load_ohlcv(symbol)
+    if df is None:
+        path = CACHE_DIR / f"{symbol}.parquet"
         raise FileNotFoundError(f"OHLCV data not found: {path}")
-
-    df = pd.read_parquet(path)
-
     if len(df) < 50:
         raise ValueError(f"Insufficient data: {len(df)} rows, need 50+")
-
     return df
 
 
 def output_result(result: dict, symbol: str, indicator: str) -> None:
+    """Output result to stdout (JSON) and save to file.
+
+    Delegates file writing to utils.data.save_ta().
     """
-    Output result to stdout (JSON) and save to file.
-
-    Args:
-        result: Analysis result dict
-        symbol: Stock symbol
-        indicator: Indicator name (for filename)
-    """
-    # Add metadata
-    result["symbol"] = symbol
-    result["indicator"] = indicator
-    result["timestamp"] = datetime.now().isoformat()
-
-    # Save to file
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = OUTPUT_DIR / f"{symbol}_{indicator}.json"
-
-    with open(output_path, "w") as f:
-        json.dump(result, f, indent=2, cls=NumpyEncoder)
-
-    log(f"Saved to {output_path}")
+    _get_data().save_ta(symbol, indicator, result)
+    log(f"Saved to {OUTPUT_DIR / f'{symbol}_{indicator}.json'}")
 
     # Print to stdout
     print(json.dumps(result, indent=2, cls=NumpyEncoder))

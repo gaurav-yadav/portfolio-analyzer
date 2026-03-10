@@ -112,6 +112,10 @@ class DeployHandler(FileSystemEventHandler):
 
     def _deploy(self):
         logging.info("Debounce elapsed — starting bake + push")
+        # NOTE: deliberately no --refresh here — adding it would cause an infinite
+        # loop because technical_all.py writes to data/technical/ and data/ta/,
+        # which would re-trigger the watcher. Full refresh is handled by the
+        # daily cron: bake_dashboard.py --refresh --push
         cmd = [
             "uv", "run", "python", "scripts/bake_dashboard.py",
         ]

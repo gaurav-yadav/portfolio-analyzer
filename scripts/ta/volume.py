@@ -16,16 +16,18 @@ from pathlib import Path
 import pandas_ta as ta
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.indicators import compute_all
+from utils.ta_config import VOLUME_SMA_PERIOD, VOLUME_SMA_LONG, VOLUME_SPIKE, VOLUME_HIGH
 from utils.ta_common import load_ohlcv, output_result, get_symbol_from_args, safe_round, log, format_date
 
 
 def analyze_volume(df) -> dict:
     """Analyze volume patterns."""
-    df = df.copy()
+    ind = compute_all(df)
+    df = ind['df']
 
-    df['vol_sma20'] = ta.sma(df['Volume'], length=20)
-    df['vol_sma50'] = ta.sma(df['Volume'], length=50)
-    df['vol_ratio'] = df['Volume'] / df['vol_sma20']
+    # compute_all() provides vol_sma20 and vol_ratio; add vol_sma50 locally
+    df['vol_sma50'] = ta.sma(df['Volume'], length=VOLUME_SMA_LONG)
     df['price_change'] = df['Close'].pct_change()
 
     latest = df.iloc[-1]
@@ -39,12 +41,12 @@ def analyze_volume(df) -> dict:
     price_change_pct = safe_round(latest['price_change'] * 100, 2)
 
     # Volume signal
-    if vol_ratio and vol_ratio > 2.0:
+    if vol_ratio and vol_ratio > VOLUME_SPIKE:
         if is_up_day:
             signal = "strong_accumulation"
         else:
             signal = "strong_distribution"
-    elif vol_ratio and vol_ratio > 1.5:
+    elif vol_ratio and vol_ratio > VOLUME_HIGH:
         if is_up_day:
             signal = "accumulation"
         else:
@@ -69,7 +71,7 @@ def analyze_volume(df) -> dict:
     recent_spikes = []
     recent = df.tail(20)
     for idx, row in recent.iterrows():
-        if row['vol_ratio'] > 2.0:
+        if row['vol_ratio'] > VOLUME_SPIKE:
             recent_spikes.append({
                 "date": format_date(idx),
                 "volume_ratio": safe_round(row['vol_ratio'], 2),

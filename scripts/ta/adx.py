@@ -14,23 +14,19 @@ Computes ADX(14) for trend strength.
 import sys
 from pathlib import Path
 
-import pandas_ta as ta
-
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.indicators import compute_all
+from utils.ta_config import ADX_PERIOD, ADX_WEAK, ADX_STRONG
 from utils.ta_common import load_ohlcv, output_result, get_symbol_from_args, safe_round, log
 
 
-def analyze_adx(df, length: int = 14) -> dict:
+def analyze_adx(df, length: int = ADX_PERIOD) -> dict:
     """Compute ADX and directional indicators."""
-    df = df.copy()
+    ind = compute_all(df)
+    df = ind['df']
 
-    adx_result = ta.adx(df['High'], df['Low'], df['Close'], length=length)
-    if adx_result is None:
+    if 'adx' not in df.columns:
         return {"error": "Could not compute ADX"}
-
-    df['adx'] = adx_result.iloc[:, 0]
-    df['plus_di'] = adx_result.iloc[:, 1]
-    df['minus_di'] = adx_result.iloc[:, 2]
 
     latest = df.iloc[-1]
     prev = df.iloc[-2]
@@ -46,9 +42,9 @@ def analyze_adx(df, length: int = 14) -> dict:
         trend_strength = "unknown"
     elif adx > 40:
         trend_strength = "very_strong"
-    elif adx > 25:
+    elif adx > ADX_STRONG:
         trend_strength = "strong"
-    elif adx > 20:
+    elif adx > ADX_WEAK:
         trend_strength = "developing"
     else:
         trend_strength = "weak_or_ranging"
@@ -102,7 +98,7 @@ def analyze_adx(df, length: int = 14) -> dict:
         "adx_rising": adx_rising,
         "signal": signal,
         "entry_signal": entry_signal,
-        "thresholds": {"strong": 25, "very_strong": 40, "weak": 20},
+        "thresholds": {"strong": ADX_STRONG, "very_strong": 40, "weak": ADX_WEAK},
     }
 
 

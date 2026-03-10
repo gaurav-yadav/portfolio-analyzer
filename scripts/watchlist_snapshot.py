@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
 """
-Watchlist Snapshot (v2) - snapshot a watchlist's state using local cache only.
+Watchlist Snapshot - snapshot a watchlist's state using local cache only.
 
 This script:
-  1) Reads watchlist events and materializes the active watchlist
+  1) Reads the flat-file watchlist via utils.data.load_watchlist()
   2) Reads cached OHLCV + existing technical snapshots (no fetching)
   3) Writes a per-run snapshot JSON under:
        data/watchlists/<watchlist_id>/snapshots/<run_id>.json
 
 Usage:
-  uv run python scripts/watchlist_snapshot.py swing
-  uv run python scripts/watchlist_snapshot.py swing --run-id 20260121_101500
+  uv run python scripts/watchlist_snapshot.py default
+  uv run python scripts/watchlist_snapshot.py default --run-id 20260121_101500
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,18 +24,13 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
 
+from utils.data import load_watchlist, load_ohlcv as data_load_ohlcv, TECH_DIR  # noqa: E402
 from utils.helpers import load_json, save_json  # noqa: E402
 from utils.config import WATCHER_THRESHOLDS  # noqa: E402
 
-from watchlist_events import events_path_for, materialize_watchlist, read_events  # noqa: E402
-
-
 
 BASE_PATH = Path(__file__).parent.parent
-CACHE_DIR = BASE_PATH / "cache" / "ohlcv"
-TECHNICAL_DIR = BASE_PATH / "data" / "technical"
 
 
 def _now_iso() -> str:
@@ -61,16 +55,6 @@ def _safe_float(x) -> float | None:
         if pd.isna(v):
             return None
         return v
-    except Exception:
-        return None
-
-
-def load_ohlcv(symbol_yf: str) -> pd.DataFrame | None:
-    path = CACHE_DIR / f"{symbol_yf}.parquet"
-    if not path.exists():
-        return None
-    try:
-        return pd.read_parquet(path)
     except Exception:
         return None
 
@@ -145,24 +129,28 @@ class SnapshotRow:
     meta: dict
 
 
-def build_snapshot(watchlist_id: str, view: dict, as_of: str, run_id: str) -> dict:
+def build_snapshot(watchlist_id: str, wl_data: dict, as_of: str, run_id: str) -> dict:
+    """Build snapshot from flat-file watchlist data."""
     rows: list[dict] = []
     alerts: list[dict] = []
 
-    stocks = view.get("stocks") or []
-    if not isinstance(stocks, list):
-        stocks = []
+    entries = wl_data.get("watchlist") or []
+    if not isinstance(entries, list):
+        entries = []
 
-    for stock in stocks:
-        if not isinstance(stock, dict):
+    for entry in entries:
+        if not isinstance(entry, dict):
             continue
 
-        symbol_yf = str(stock.get("symbol_yf") or "").strip()
-        symbol = str(stock.get("symbol") or "").strip()
-        if not symbol_yf:
+        ticker = str(entry.get("ticker") or "").strip()
+        if not ticker:
             continue
 
-        technical = load_json(TECHNICAL_DIR / f"{symbol_yf}.json") or {}
+        # Use ticker as symbol_yf (it already includes exchange suffix in flat files)
+        symbol_yf = ticker
+        symbol = ticker
+
+        technical = load_json(TECH_DIR / f"{symbol_yf}.json") or {}
         indicators = (technical.get("indicators") or {}) if isinstance(technical, dict) else {}
 
         rsi = _safe_float(indicators.get("rsi"))
@@ -170,7 +158,7 @@ def build_snapshot(watchlist_id: str, view: dict, as_of: str, run_id: str) -> di
         sma200 = _safe_float(indicators.get("sma200"))
         close = _safe_float(indicators.get("latest_close"))
 
-        ohlcv = load_ohlcv(symbol_yf)
+        ohlcv = data_load_ohlcv(symbol_yf)
         if close is None and ohlcv is not None and not ohlcv.empty and "Close" in ohlcv.columns:
             close = _safe_float(ohlcv["Close"].astype(float).iloc[-1])
 
@@ -205,7 +193,7 @@ def build_snapshot(watchlist_id: str, view: dict, as_of: str, run_id: str) -> di
         if tr == "downtrend":
             flags.append("downtrend")
 
-        added_price = _safe_float(stock.get("added_price"))
+        added_price = _safe_float(entry.get("price_at_add"))
         watch_return_pct = (
             (close - added_price) / added_price * 100
             if (close is not None and added_price and added_price > 0)
@@ -213,12 +201,13 @@ def build_snapshot(watchlist_id: str, view: dict, as_of: str, run_id: str) -> di
         )
 
         meta = {
-            "plan": stock.get("plan") if isinstance(stock.get("plan"), dict) else {},
-            "tags": stock.get("tags") if isinstance(stock.get("tags"), list) else [],
-            "source_scan": stock.get("source_scan") or "",
-            "added_date": stock.get("added_date") or "",
-            "added_from_scan": stock.get("added_from_scan") or "",
-            "last_event_at": stock.get("last_event_at") or "",
+            "thesis": entry.get("thesis") or "",
+            "horizon": entry.get("horizon") or "",
+            "status": entry.get("status") or "",
+            "catalysts": entry.get("catalysts") if isinstance(entry.get("catalysts"), list) else [],
+            "added_at": entry.get("added_at") or "",
+            "score": entry.get("score"),
+            "score_date": entry.get("score_date") or "",
         }
 
         row = SnapshotRow(
@@ -277,8 +266,8 @@ def build_snapshot(watchlist_id: str, view: dict, as_of: str, run_id: str) -> di
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Write a local-cache watchlist snapshot (v2).")
-    parser.add_argument("watchlist_id", help="Watchlist identifier (folder name)")
+    parser = argparse.ArgumentParser(description="Write a local-cache watchlist snapshot.")
+    parser.add_argument("watchlist_id", help="Watchlist identifier (e.g., default, swing)")
     parser.add_argument("--run-id", default="", help="Run identifier (default: derived from as_of or now)")
     parser.add_argument("--as-of", default="", help="As-of timestamp ISO-8601 (default: now)")
     parser.add_argument("--out", default="", help="Output JSON path (default: data/watchlists/<id>/snapshots/<run_id>.json)")
@@ -287,11 +276,12 @@ def main() -> None:
     as_of = args.as_of or _now_iso()
     run_id = args.run_id or _default_run_id(as_of)
 
-    events_path = events_path_for(args.watchlist_id)
-    events = read_events(events_path)
-    view = materialize_watchlist(args.watchlist_id, events)
+    wl_data = load_watchlist(args.watchlist_id)
+    if wl_data is None:
+        print(f"Error: watchlist '{args.watchlist_id}' not found at data/watchlists/{args.watchlist_id}.json", file=sys.stderr)
+        sys.exit(1)
 
-    report = build_snapshot(args.watchlist_id, view, as_of=as_of, run_id=run_id)
+    report = build_snapshot(args.watchlist_id, wl_data, as_of=as_of, run_id=run_id)
 
     if args.out:
         out_path = Path(args.out)
@@ -299,8 +289,6 @@ def main() -> None:
         out_path = BASE_PATH / "data" / "watchlists" / args.watchlist_id / "snapshots" / f"{run_id}.json"
 
     save_json(out_path, report)
-    # Also keep the materialized view updated for other scripts.
-    save_json(BASE_PATH / "data" / "watchlists" / args.watchlist_id / "watchlist.json", view)
     print(f"Saved: {out_path}")
 
 

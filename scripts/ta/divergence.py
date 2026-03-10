@@ -26,9 +26,10 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-import pandas_ta as ta
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.indicators import compute_all
+from utils.ta_config import DIV_LOOKBACK, DIV_SWING_WINDOW, CONFLUENCE_BOOST
 from utils.ta_common import load_ohlcv, output_result, get_symbol_from_args, safe_round, log
 
 
@@ -54,9 +55,9 @@ def find_local_extrema(series: pd.Series, window: int = 5) -> tuple[list, list]:
 def detect_divergence(
     price: pd.Series,
     indicator: pd.Series,
-    lookback: int = 60,
+    lookback: int = DIV_LOOKBACK,
     min_bar_gap: int = 5,
-    window: int = 5,
+    window: int = DIV_SWING_WINDOW,
 ) -> dict:
     """
     Detect regular and hidden bullish/bearish divergence.
@@ -186,17 +187,10 @@ def detect_divergence(
     }
 
 
-def analyze_divergence(df, lookback: int = 60) -> dict:
+def analyze_divergence(df, lookback: int = DIV_LOOKBACK) -> dict:
     """Run divergence detection on RSI and MACD vs price."""
-    df = df.copy()
-
-    # Compute indicators
-    df['rsi'] = ta.rsi(df['Close'], length=14)
-
-    macd_result = ta.macd(df['Close'], fast=12, slow=26, signal=9)
-    if macd_result is not None:
-        df['macd'] = macd_result.iloc[:, 0]
-        df['macd_hist'] = macd_result.iloc[:, 1]
+    ind = compute_all(df)
+    df = ind['df']
 
     price = df['Close']
     current_price = safe_round(price.iloc[-1], 2)
@@ -238,7 +232,7 @@ def analyze_divergence(df, lookback: int = 60) -> dict:
 
     max_confidence = max((d["confidence_pct"] for d in all_divergences), default=0)
     if confluence:
-        max_confidence = min(95, max_confidence + 15)  # Boost for multi-indicator confirmation
+        max_confidence = min(95, max_confidence + CONFLUENCE_BOOST)  # Boost for multi-indicator confirmation
 
     return {
         "current_price": current_price,

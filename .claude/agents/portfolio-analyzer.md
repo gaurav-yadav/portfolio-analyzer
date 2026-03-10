@@ -55,8 +55,8 @@ uv run python scripts/holdings_validate.py --portfolio-id <portfolio_id> --count
 
 ### 1) Update OHLCV + technicals (deterministic)
 ```bash
-uv run python scripts/fetch_all.py --holdings
-uv run python scripts/technical_all.py --holdings
+uv run python scripts/fetch_all.py --holdings --all-watchlists
+uv run python scripts/technical_all.py --holdings --all-watchlists
 ```
 
 ### 2) Check research freshness (DETERMINISTIC GATE)

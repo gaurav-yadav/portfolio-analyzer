@@ -280,10 +280,16 @@ Reports are saved to `output/analysis_YYYYMMDD_HHMMSS.csv`.
 
 ### Dashboard
 
-Open `dashboard/index.html` in any browser. Click "Select CSV File" to load your analysis. Features:
-- Sort by score, recommendation, or any column
-- Click a row for detailed breakdown
-- Visual charts for score distribution
+The dashboard reads from `dashboard/public/data.js` (baked data) when served statically, or from the live API when running locally.
+
+- **Static (GitHub Pages):** deployed automatically on push; reads from baked `data.js`
+- **Local:** `cd dashboard && npx tsx src/server.ts` → http://localhost:3323
+
+Features:
+- Portfolio technicals tab with scores and recommendations
+- Watchlist view with live prices, SINCE ADD, PROXIMITY, and R:R columns
+- Suggestions ledger with win rate and P&L tracking
+- Candlestick charts powered by lightweight-charts
 
 ---
 
@@ -352,9 +358,9 @@ See [docs/data-sources.md](docs/data-sources.md) for complete data flow.
 portfolio-analyzer/
 ├── input/                    # Put your CSV files here
 ├── output/                   # Analysis reports (CSV)
-├── dashboard/                # Node.js dashboard (port 3323 locally, GitHub Pages publicly)
-│   ├── src/server.ts         # Express API server
-│   └── public/               # Static frontend (index.html, data.js)
+├── dashboard/                # TypeScript/Express dashboard (port 3323 locally, GitHub Pages publicly)
+│   ├── src/server.ts         # Express API server (live data)
+│   └── public/               # Static frontend (index.html, data.js, lib/lightweight-charts)
 ├── scripts/                  # Python analysis scripts
 │   └── ta/                   # Modular TA: stoch_rsi, divergence, patterns, entry_points, …
 ├── utils/                    # Shared config and helpers
@@ -367,7 +373,7 @@ portfolio-analyzer/
 │   ├── legal/                # Legal signals
 │   ├── scores/               # Final scores
 │   ├── scans/                # Scanner results
-│   ├── watchlists/           # Watchlists (shared.json + per-watchlist subdirs)
+│   ├── watchlists/           # Watchlists: <name>/events.jsonl + watchlist.json + snapshots/ (v2 event-sourced)
 │   ├── suggestions/          # Suggestions ledger + weekly outcomes
 │   │   ├── ledger.jsonl      # Append-only trade calls log
 │   │   └── outcomes/         # Weekly resolution results

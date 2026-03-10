@@ -12,23 +12,19 @@ Computes MACD(12,26,9) and provides momentum signals.
 import sys
 from pathlib import Path
 
-import pandas_ta as ta
-
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.indicators import compute_all
+from utils.ta_config import MACD_FAST, MACD_SLOW, MACD_SIGNAL
 from utils.ta_common import load_ohlcv, output_result, get_symbol_from_args, safe_round, log, format_date
 
 
-def analyze_macd(df, fast: int = 12, slow: int = 26, signal: int = 9) -> dict:
+def analyze_macd(df, fast: int = MACD_FAST, slow: int = MACD_SLOW, signal: int = MACD_SIGNAL) -> dict:
     """Compute MACD and generate signals."""
-    df = df.copy()
+    ind = compute_all(df)
+    df = ind['df']
 
-    macd_result = ta.macd(df['Close'], fast=fast, slow=slow, signal=signal)
-    if macd_result is None:
+    if 'macd' not in df.columns:
         return {"error": "Could not compute MACD"}
-
-    df['macd'] = macd_result.iloc[:, 0]
-    df['macd_hist'] = macd_result.iloc[:, 1]
-    df['macd_signal'] = macd_result.iloc[:, 2]
 
     latest = df.iloc[-1]
     prev = df.iloc[-2]

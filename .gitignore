@@ -46,3 +46,12 @@ Thumbs.db
 # Dashboard build artifacts
 dashboard/node_modules/
 dashboard/DASHBOARD_TODO.md
+dashboard/UI_PLAN.md
+
+# Backup dirs
+data_backup*/
+*_backup_*/
+
+# Session/scratch files
+plan.md
+scratch.md

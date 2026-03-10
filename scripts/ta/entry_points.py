@@ -22,86 +22,51 @@ from pathlib import Path
 from datetime import datetime
 
 import pandas as pd
-import pandas_ta as ta
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.indicators import compute_all, extract_latest
+from utils.ta_config import (
+    RSI_OVERSOLD, RSI_APPROACHING_OVERSOLD, RSI_OVERBOUGHT, RSI_ELEVATED,
+    ADX_WEAK, ADX_STRONG,
+    BB_LOWER_THRESHOLD,
+    VOLUME_HIGH,
+    FIB_LOOKBACK, FIB_PROXIMITY_PCT,
+    SIGNAL_BULLISH_THRESHOLD,
+)
 from utils.ta_common import (
     load_ohlcv, get_symbol_from_args, safe_round, log, format_date,
     find_swing_points, BASE_PATH, NumpyEncoder
 )
 
 
-def compute_all_indicators(df: pd.DataFrame) -> dict:
-    """Compute all technical indicators in one pass."""
-    df = df.copy()
-
-    # RSI
-    df['rsi'] = ta.rsi(df['Close'], length=14)
-
-    # MACD
-    macd_result = ta.macd(df['Close'], fast=12, slow=26, signal=9)
-    if macd_result is not None:
-        df['macd'] = macd_result.iloc[:, 0]
-        df['macd_signal'] = macd_result.iloc[:, 2]
-        df['macd_hist'] = macd_result.iloc[:, 1]
-
-    # SMAs
-    df['sma20'] = ta.sma(df['Close'], length=20)
-    df['sma50'] = ta.sma(df['Close'], length=50)
-    if len(df) >= 200:
-        df['sma200'] = ta.sma(df['Close'], length=200)
-
-    # Bollinger Bands
-    bbands = ta.bbands(df['Close'], length=20, std=2)
-    if bbands is not None:
-        df['bb_lower'] = bbands.iloc[:, 0]
-        df['bb_upper'] = bbands.iloc[:, 2]
-        df['bb_pctb'] = bbands.iloc[:, 4]
-
-    # ADX
-    adx_result = ta.adx(df['High'], df['Low'], df['Close'], length=14)
-    if adx_result is not None:
-        df['adx'] = adx_result.iloc[:, 0]
-        df['plus_di'] = adx_result.iloc[:, 1]
-        df['minus_di'] = adx_result.iloc[:, 2]
-
-    # Volume
-    df['vol_sma20'] = ta.sma(df['Volume'], length=20)
-    df['vol_ratio'] = df['Volume'] / df['vol_sma20']
-
-    # ATR for stop loss
-    df['atr'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
-
-    return df
-
-
 def analyze_entry_points(df: pd.DataFrame) -> dict:
     """Analyze entry points using all indicators."""
 
-    df = compute_all_indicators(df)
-    latest = df.iloc[-1]
-    price = safe_round(latest['Close'], 2)
+    ind = compute_all(df)
+    df = ind['df']
+    vals = extract_latest(df)
+    price = vals['price']
 
-    # Extract indicator values
-    rsi = safe_round(latest.get('rsi'), 2)
-    macd = safe_round(latest.get('macd'), 4)
-    macd_signal = safe_round(latest.get('macd_signal'), 4)
-    macd_hist = safe_round(latest.get('macd_hist'), 4)
-    sma20 = safe_round(latest.get('sma20'), 2)
-    sma50 = safe_round(latest.get('sma50'), 2)
-    sma200 = safe_round(latest.get('sma200'), 2) if 'sma200' in df.columns else None
-    bb_pctb = safe_round(latest.get('bb_pctb'), 4)
-    bb_lower = safe_round(latest.get('bb_lower'), 2)
-    bb_upper = safe_round(latest.get('bb_upper'), 2)
-    adx = safe_round(latest.get('adx'), 2)
-    plus_di = safe_round(latest.get('plus_di'), 2)
-    minus_di = safe_round(latest.get('minus_di'), 2)
-    vol_ratio = safe_round(latest.get('vol_ratio'), 2)
-    atr = safe_round(latest.get('atr'), 2)
+    # Extract indicator values from extract_latest
+    rsi = vals['rsi']
+    macd = vals['macd']
+    macd_signal = vals['macd_signal']
+    macd_hist = vals['macd_hist']
+    sma20 = vals['sma20']
+    sma50 = vals['sma50']
+    sma200 = vals['sma200']
+    bb_pctb = vals['bb_pctb']
+    bb_lower = vals['bb_lower']
+    bb_upper = vals['bb_upper']
+    adx = vals['adx']
+    plus_di = vals['plus_di']
+    minus_di = vals['minus_di']
+    vol_ratio = vals['vol_ratio']
+    atr = vals['atr']
 
-    # Fibonacci levels (60-day lookback)
-    recent = df.tail(60)
+    # Fibonacci levels
+    recent = df.tail(FIB_LOOKBACK)
     swing_high = recent['High'].max()
     swing_low = recent['Low'].min()
     fib_diff = swing_high - swing_low
@@ -117,16 +82,16 @@ def analyze_entry_points(df: pd.DataFrame) -> dict:
 
     # RSI Signal
     if rsi:
-        if rsi < 30:
+        if rsi < RSI_OVERSOLD:
             signals.append({"indicator": "RSI", "signal": "oversold", "value": rsi, "bias": "bullish"})
             bullish_count += 2
-        elif rsi < 40:
+        elif rsi < RSI_APPROACHING_OVERSOLD:
             signals.append({"indicator": "RSI", "signal": "approaching_oversold", "value": rsi, "bias": "bullish"})
             bullish_count += 1
-        elif rsi > 70:
+        elif rsi > RSI_OVERBOUGHT:
             signals.append({"indicator": "RSI", "signal": "overbought", "value": rsi, "bias": "bearish"})
             bearish_count += 2
-        elif rsi > 60:
+        elif rsi > RSI_ELEVATED:
             signals.append({"indicator": "RSI", "signal": "elevated", "value": rsi, "bias": "neutral"})
 
     # MACD Signal
@@ -163,7 +128,7 @@ def analyze_entry_points(df: pd.DataFrame) -> dict:
         if bb_pctb < 0:
             signals.append({"indicator": "Bollinger", "signal": "below_lower_band", "value": bb_pctb, "bias": "bullish"})
             bullish_count += 1
-        elif bb_pctb < 0.2:
+        elif bb_pctb < BB_LOWER_THRESHOLD:
             signals.append({"indicator": "Bollinger", "signal": "near_lower_band", "value": bb_pctb, "bias": "bullish"})
             bullish_count += 1
         elif bb_pctb > 1:
@@ -172,7 +137,7 @@ def analyze_entry_points(df: pd.DataFrame) -> dict:
 
     # ADX Signal
     if adx and plus_di and minus_di:
-        strong_trend = adx > 25
+        strong_trend = adx > ADX_STRONG
         bullish_di = plus_di > minus_di
 
         if strong_trend and bullish_di:
@@ -181,16 +146,16 @@ def analyze_entry_points(df: pd.DataFrame) -> dict:
         elif strong_trend and not bullish_di:
             signals.append({"indicator": "ADX", "signal": "strong_downtrend", "value": adx, "bias": "bearish"})
             bearish_count += 2
-        elif adx < 20:
+        elif adx < ADX_WEAK:
             signals.append({"indicator": "ADX", "signal": "weak_trend", "value": adx, "bias": "neutral"})
 
     # Volume Signal
-    is_up_day = latest['Close'] >= latest['Open']
+    is_up_day = vals['is_up_day']
     if vol_ratio:
-        if vol_ratio > 1.5 and is_up_day:
+        if vol_ratio > VOLUME_HIGH and is_up_day:
             signals.append({"indicator": "Volume", "signal": "accumulation", "value": vol_ratio, "bias": "bullish"})
             bullish_count += 1
-        elif vol_ratio > 1.5 and not is_up_day:
+        elif vol_ratio > VOLUME_HIGH and not is_up_day:
             signals.append({"indicator": "Volume", "signal": "distribution", "value": vol_ratio, "bias": "bearish"})
             bearish_count += 1
 
@@ -198,10 +163,10 @@ def analyze_entry_points(df: pd.DataFrame) -> dict:
     dist_to_fib618 = abs(price - fib_618) / price * 100 if fib_618 else None
     dist_to_fib50 = abs(price - fib_50) / price * 100 if fib_50 else None
 
-    if dist_to_fib618 and dist_to_fib618 < 2:
+    if dist_to_fib618 and dist_to_fib618 < FIB_PROXIMITY_PCT:
         signals.append({"indicator": "Fibonacci", "signal": "at_61.8%_level", "value": fib_618, "bias": "bullish"})
         bullish_count += 1
-    elif dist_to_fib50 and dist_to_fib50 < 2:
+    elif dist_to_fib50 and dist_to_fib50 < FIB_PROXIMITY_PCT:
         signals.append({"indicator": "Fibonacci", "signal": "at_50%_level", "value": fib_50, "bias": "bullish"})
         bullish_count += 1
 
@@ -210,10 +175,10 @@ def analyze_entry_points(df: pd.DataFrame) -> dict:
     if total_signals == 0:
         verdict = "NEUTRAL"
         entry_recommendation = "wait_for_signals"
-    elif bullish_count >= bearish_count + 3:
+    elif bullish_count >= bearish_count + SIGNAL_BULLISH_THRESHOLD:
         verdict = "BULLISH"
         entry_recommendation = "favorable_entry"
-    elif bearish_count >= bullish_count + 3:
+    elif bearish_count >= bullish_count + SIGNAL_BULLISH_THRESHOLD:
         verdict = "BEARISH"
         entry_recommendation = "avoid_entry"
     elif bullish_count > bearish_count:

@@ -31,14 +31,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.config import WATCHER_THRESHOLDS  # noqa: E402
 from utils.helpers import load_json, save_json  # noqa: E402
+from utils.data import load_watchlist as data_load_watchlist, all_watchlist_symbols, WATCHER_DIR  # noqa: E402
 
 
 BASE_PATH = Path(__file__).parent.parent
 CACHE_DIR = BASE_PATH / "cache" / "ohlcv"
 TECHNICAL_DIR = BASE_PATH / "data" / "technical"
 HOLDINGS_PATH = BASE_PATH / "data" / "holdings.json"
-WATCHLIST_PATH = BASE_PATH / "data" / "watchlist.json"
-WATCHER_DIR = BASE_PATH / "data" / "watcher"
 
 
 def normalize_yf_symbol(symbol: str, default_suffix: str) -> str:
@@ -112,18 +111,27 @@ def load_holdings_aggregated() -> dict[str, HoldingAgg]:
     return result
 
 
-def load_watchlist_entries(default_suffix: str, watchlist_path: Path = WATCHLIST_PATH) -> dict[str, dict]:
-    if not watchlist_path.exists():
+def load_watchlist_entries(default_suffix: str, watchlist_id: str = "") -> dict[str, dict]:
+    """Load watchlist entries from flat file via data layer."""
+    if not watchlist_id:
         return {}
 
-    watchlist = json.loads(watchlist_path.read_text())
+    wl = data_load_watchlist(watchlist_id)
+    if not wl:
+        return {}
+
+    from utils.data import _ticker_to_yf
+
     entries: dict[str, dict] = {}
-    for stock in (watchlist.get("stocks") or []):
-        raw = (stock.get("symbol") or "").strip()
-        if not raw:
+    for entry in (wl.get("watchlist") or []):
+        symbol_yf = _ticker_to_yf(entry)
+        if not symbol_yf:
             continue
-        symbol_yf = normalize_yf_symbol(raw, default_suffix)
-        entries[symbol_yf] = stock
+        entries[symbol_yf] = {
+            "added_price": entry.get("price_at_add"),
+            "added_date": entry.get("added_at"),
+            "notes": entry.get("thesis", ""),
+        }
     return entries
 
 
@@ -364,7 +372,12 @@ def main() -> None:
     parser.add_argument(
         "--watchlist-id",
         default="",
-        help="Include symbols from data/watchlists/<watchlist_id>/watchlist.json.",
+        help="Include symbols from data/watchlists/<watchlist_id>.json.",
+    )
+    parser.add_argument(
+        "--all-watchlists",
+        action="store_true",
+        help="Include symbols from all watchlists.",
     )
     parser.add_argument("--default-suffix", default=".NS", help="Suffix for watchlist symbols without exchange suffix (default: .NS)")
     parser.add_argument("--symbols", nargs="*", default=[], help="Explicit Yahoo Finance tickers to include")
@@ -373,25 +386,23 @@ def main() -> None:
 
     use_holdings = args.holdings
     use_watchlist = bool(args.watchlist_id)
+    use_all_watchlists = args.all_watchlists
     explicit_symbols = [s for s in (args.symbols or []) if s.strip()]
 
     # Default behavior for this watcher: include both, if available.
-    if not use_holdings and not use_watchlist and not explicit_symbols:
+    if not use_holdings and not use_watchlist and not use_all_watchlists and not explicit_symbols:
         use_holdings = True
         use_watchlist = True
+        args.watchlist_id = "default"
 
     holdings = load_holdings_aggregated() if use_holdings else {}
-    watchlist_path = WATCHLIST_PATH
-    if args.watchlist_id:
-        watchlist_path = BASE_PATH / "data" / "watchlists" / args.watchlist_id / "watchlist.json"
-        if not watchlist_path.exists():
-            print(
-                f"Error: watchlist not found at {watchlist_path}. "
-                "Create it via: uv run python scripts/watchlist_events.py add <watchlist_id> <symbol>",
-                file=sys.stderr,
-            )
-            return
-    watchlist = load_watchlist_entries(args.default_suffix, watchlist_path=watchlist_path) if use_watchlist else {}
+    watchlist: dict[str, dict] = {}
+    if use_watchlist and args.watchlist_id:
+        watchlist = load_watchlist_entries(args.default_suffix, watchlist_id=args.watchlist_id)
+    if use_all_watchlists:
+        for sym in all_watchlist_symbols().keys():
+            if sym not in watchlist:
+                watchlist[sym] = {}  # Already YF-formatted by data layer
 
     symbols: list[str] = []
     symbols.extend(list(holdings.keys()))

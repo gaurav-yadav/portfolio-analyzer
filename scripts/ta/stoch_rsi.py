@@ -18,30 +18,26 @@ Signals:
 import sys
 from pathlib import Path
 
-import pandas_ta as ta
-
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.indicators import compute_all
+from utils.ta_config import STOCH_RSI_LENGTH, STOCH_RSI_K, STOCH_RSI_D
 from utils.ta_common import load_ohlcv, output_result, get_symbol_from_args, safe_round, log
 
 
-def analyze_stoch_rsi(df, rsi_length: int = 14, stoch_length: int = 14, k: int = 3, d: int = 3) -> dict:
+def analyze_stoch_rsi(df, rsi_length: int = STOCH_RSI_LENGTH, stoch_length: int = STOCH_RSI_LENGTH, k: int = STOCH_RSI_K, d: int = STOCH_RSI_D) -> dict:
     """Compute Stochastic RSI and generate signals."""
-    df = df.copy()
+    ind = compute_all(df)
+    df = ind['df']
 
-    stochrsi = ta.stochrsi(df['Close'], length=rsi_length, rsi_length=rsi_length, k=k, d=d)
-
-    if stochrsi is None or stochrsi.empty:
+    if 'stoch_rsi_k' not in df.columns or df['stoch_rsi_k'].isna().all():
         return {"error": "insufficient_data", "signal": "no_data"}
 
-    k_col = stochrsi.columns[0]  # STOCHRSIk
-    d_col = stochrsi.columns[1]  # STOCHRSId
-
-    k_val = safe_round(stochrsi[k_col].iloc[-1], 2)
-    d_val = safe_round(stochrsi[d_col].iloc[-1], 2)
+    k_val = safe_round(df['stoch_rsi_k'].iloc[-1], 2)
+    d_val = safe_round(df['stoch_rsi_d'].iloc[-1], 2)
 
     # Previous values for crossover detection
-    k_prev = safe_round(stochrsi[k_col].iloc[-2], 2) if len(stochrsi) >= 2 else None
-    d_prev = safe_round(stochrsi[d_col].iloc[-2], 2) if len(stochrsi) >= 2 else None
+    k_prev = safe_round(df['stoch_rsi_k'].iloc[-2], 2) if len(df) >= 2 else None
+    d_prev = safe_round(df['stoch_rsi_d'].iloc[-2], 2) if len(df) >= 2 else None
 
     # Zone classification
     if k_val is None:
