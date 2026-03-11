@@ -142,12 +142,17 @@ def load_watchlists() -> list:
         if not data:
             continue
         wl_id = f.stem
+        if "id" not in data:
+            data["id"] = wl_id
+        if "name" not in data:
+            data["name"] = wl_id.replace("_", " ").replace("-", " ").title()
         # Normalize entries for frontend
         for s in (data.get("watchlist") or []):
             if "ticker" not in s and "symbol" in s:
                 s["ticker"] = s["symbol"]
             if "market" not in s:
-                s["market"] = "US"
+                ticker = str(s.get("ticker") or "")
+                s["market"] = "IN" if ticker.endswith(".NS") or ticker.endswith(".BO") else "US"
         results.append({"id": wl_id, "data": data})
     return results
 
@@ -244,14 +249,19 @@ def get_watchlist_symbols() -> tuple[list[str], list[str]]:
             if s.get("status") == "REMOVED":
                 continue
             ticker = (s.get("ticker") or s.get("symbol") or "").strip().upper()
-            if not ticker or ticker in seen:
+            if not ticker:
                 continue
-            seen.add(ticker)
             market = (s.get("market") or "US").upper()
             if market == "IN":
                 yf_sym = ticker if "." in ticker else f"{ticker}.NS"
+                if yf_sym in seen:
+                    continue
+                seen.add(yf_sym)
                 in_syms.append(yf_sym)
             else:
+                if ticker in seen:
+                    continue
+                seen.add(ticker)
                 us_syms.append(ticker)
 
     # flat files: data/watchlists/<name>.json (primary format)
@@ -364,6 +374,7 @@ def main():
                 yf_sym = ticker + ".NS" if market == "IN" and "." not in ticker else ticker
                 if yf_sym:
                     all_tickers.append(yf_sym)
+        all_tickers = list(dict.fromkeys(all_tickers))
         if all_tickers:
             print(f"  Fetching prices for {len(all_tickers)} tickers...", end=" ", flush=True)
             prices = fetch_prices(all_tickers)

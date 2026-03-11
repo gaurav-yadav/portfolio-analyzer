@@ -29,19 +29,47 @@ const get = BAKED ? async (url) => {
 function fmt(n, dec = 2) { return n == null ? '—' : (+n).toFixed(dec); }
 function pct(n) { return n == null ? '—' : (n > 0 ? '+' : '') + (+n).toFixed(1) + '%'; }
 function curr(s) { return s?.entry_zone?.currency === 'INR' ? '₹' : '$'; }
-function yfSym(s) { return s.market === 'IN' ? s.ticker + '.NS' : s.ticker; }
+function yfSym(s) {
+  if (!s?.ticker) return '';
+  return s.market === 'IN' && !String(s.ticker).includes('.') ? s.ticker + '.NS' : s.ticker;
+}
 
 function fmtDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function titleizeWatchlist(id) {
+  return (id || 'watchlist')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+function priceKeyFor(entry) {
+  return entry ? yfSym(entry) : '';
+}
+
+function scopeLabel() {
+  if (wlScope === 'all') return 'All Watchlists';
+  const match = wlWatchlists.find(wl => wl.id === wlScope);
+  return match?.name || titleizeWatchlist(wlScope);
+}
+
+function scopedStocks() {
+  return wlScope === 'all'
+    ? wlAllStocks
+    : wlAllStocks.filter(s => s._watchlistId === wlScope);
+}
+
 // ── Global state ─────────────────────────────────────────────────────────────
 let wlAllStocks = [];   // all watchlist entries (including REMOVED)
-let wlPrices = {};      // ticker -> { price, change_pct }
+let wlWatchlists = [];  // watchlist metadata for scope switcher
+let wlPrices = {};      // yf symbol -> { price, change_pct }
+let wlScope = 'all';    // selected watchlist id | all
 let wlFilter = 'all';   // all | IN | US | zone | stop | signal
 let wlSearch = '';
 let _currentStock = null; // ticker of stock currently in detail view
+let _currentWatchlistId = '';
 
 // ── Navigation ───────────────────────────────────────────────────────────────
 function navigate(page, opts = {}) {
@@ -53,7 +81,8 @@ function navigate(page, opts = {}) {
   if (pg) pg.classList.add('active');
   if (page === 'stock' && opts.ticker) {
     _currentStock = opts.ticker;
-    openStockDetail(opts.ticker);
+    _currentWatchlistId = opts.watchlistId || '';
+    openStockDetail(opts.ticker, opts.watchlistId || '');
   }
 }
 
@@ -61,11 +90,14 @@ function navigate(page, opts = {}) {
 function routeFromHash() {
   const h = location.hash || '#/';
   if (h.startsWith('#/stock/')) {
-    const ticker = decodeURIComponent(h.slice(8));
+    const raw = h.slice(8);
+    const [tickerPart, query = ''] = raw.split('?');
+    const ticker = decodeURIComponent(tickerPart);
+    const watchlistId = new URLSearchParams(query).get('wl') || '';
     const stockTab = document.getElementById('tab-stock');
     stockTab.textContent = ticker;
     stockTab.classList.remove('hidden');
-    navigate('stock', { ticker });
+    navigate('stock', { ticker, watchlistId });
   } else if (h === '#/track') {
     navigate('track');
   } else {
@@ -126,7 +158,7 @@ function proximityBar(s, price) {
 }
 
 function proximitySort(s) {
-  const p = wlPrices[s.ticker];
+  const p = wlPrices[priceKeyFor(s)];
   if (!p || !s.entry_zone || !s.stop_loss || !s.target) return 99;
   const price = p.price;
   const ezLow = s.entry_zone.low, ezHigh = s.entry_zone.high;
@@ -230,7 +262,8 @@ function getTrend(s) {
 // ── Filter logic ─────────────────────────────────────────────────────────────
 function passesFilter(s) {
   if (s.status === 'REMOVED') return false;
-  const p = wlPrices[s.ticker];
+  if (wlScope !== 'all' && s._watchlistId !== wlScope) return false;
+  const p = wlPrices[priceKeyFor(s)];
   if (wlFilter === 'IN' && s.market !== 'IN') return false;
   if (wlFilter === 'US' && s.market !== 'US') return false;
   if (wlFilter === 'zone') {
@@ -246,17 +279,64 @@ function passesFilter(s) {
   }
   if (wlSearch) {
     const q = wlSearch.toLowerCase();
-    if (!s.ticker.toLowerCase().includes(q) && !(s.company_name || '').toLowerCase().includes(q)) return false;
+    if (
+      !s.ticker.toLowerCase().includes(q) &&
+      !(s.company_name || '').toLowerCase().includes(q) &&
+      !(s._watchlistName || '').toLowerCase().includes(q)
+    ) return false;
   }
   return true;
 }
 
+// ── Watchlist scope ───────────────────────────────────────────────────────────
+function renderWatchlistScope() {
+  const mount = document.getElementById('watchlistScope');
+  if (!mount) return;
+
+  const totalActive = wlAllStocks.filter(s => s.status !== 'REMOVED').length;
+  const scopedActive = scopedStocks().filter(s => s.status !== 'REMOVED').length;
+  const chips = [
+    `<button class="scope-chip ${wlScope === 'all' ? 'active' : ''}" data-scope="all">
+      <span class="scope-chip-label">All Watchlists</span>
+      <span class="scope-chip-count">${totalActive}</span>
+    </button>`,
+    ...wlWatchlists.map(wl => `
+      <button class="scope-chip ${wlScope === wl.id ? 'active' : ''}" data-scope="${wl.id}">
+        <span class="scope-chip-label">${wl.name}</span>
+        <span class="scope-chip-count">${wl.activeCount}</span>
+      </button>
+    `),
+  ].join('');
+
+  mount.innerHTML = `
+    <div class="wl-scope-head">
+      <div>
+        <div class="wl-scope-kicker">Watchlist View</div>
+        <div class="wl-scope-title">${scopeLabel()}</div>
+      </div>
+      <div class="wl-scope-meta">${wlScope === 'all'
+        ? `${wlWatchlists.length} lists • ${totalActive} active entries`
+        : `${scopedActive} active entries`}</div>
+    </div>
+    <div class="wl-scope-chips">${chips}</div>
+  `;
+
+  mount.querySelectorAll('[data-scope]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      wlScope = btn.dataset.scope || 'all';
+      renderWatchlistScope();
+      renderAttnCards();
+      renderWatchlist();
+    });
+  });
+}
+
 // ── Attention cards ───────────────────────────────────────────────────────────
 function renderAttnCards() {
-  const active = wlAllStocks.filter(s => s.status !== 'REMOVED');
+  const active = scopedStocks().filter(s => s.status !== 'REMOVED');
   let inZone = [], nearStop = [], hasSig = [];
   for (const s of active) {
-    const p = wlPrices[s.ticker];
+    const p = wlPrices[priceKeyFor(s)];
     if (p && s.entry_zone && p.price >= s.entry_zone.low && p.price <= s.entry_zone.high) inZone.push(s.ticker);
     if (p && s.stop_loss && p.price <= s.stop_loss * 1.05) nearStop.push(s.ticker);
     if (getSignal(s)) hasSig.push(s.ticker);
@@ -283,7 +363,7 @@ function renderAttnCards() {
     <div class="attn-card ac-watching" data-attn="all">
       <div class="ac-label">Watching</div>
       <div class="ac-value">${active.length}</div>
-      <div class="ac-sub">IN: ${india.length}  US: ${us.length}</div>
+      <div class="ac-sub">${scopeLabel()} · IN: ${india.length}  US: ${us.length}</div>
     </div>
   `;
 
@@ -305,6 +385,10 @@ function renderWatchlist() {
   const filtered = wlAllStocks.filter(passesFilter);
 
   if (!filtered.length) {
+    empty.querySelector('h3').textContent = scopeLabel();
+    empty.querySelector('p').textContent = wlScope === 'all'
+      ? 'No stocks on any watchlist yet.'
+      : `No active stocks on ${scopeLabel()} yet.`;
     empty.style.display = 'block';
     document.getElementById('wlTable').style.display = 'none';
     return;
@@ -317,11 +401,11 @@ function renderWatchlist() {
 
   // Group
   const inZoneGroup = sorted.filter(s => {
-    const p = wlPrices[s.ticker];
+    const p = wlPrices[priceKeyFor(s)];
     return p && s.entry_zone && p.price >= s.entry_zone.low && p.price <= s.entry_zone.high;
   });
   const attnGroup = sorted.filter(s => {
-    const p = wlPrices[s.ticker];
+    const p = wlPrices[priceKeyFor(s)];
     if (inZoneGroup.includes(s)) return false;
     return (p && s.stop_loss && p.price <= s.stop_loss * 1.05) || (getSignal(s)?.cls === 'sig-bear');
   });
@@ -345,16 +429,17 @@ function renderWatchlist() {
     row.style.cursor = 'pointer';
     row.addEventListener('click', () => {
       const ticker = row.dataset.ticker;
+      const watchlistId = row.dataset.watchlistId || '';
       const stockTab = document.getElementById('tab-stock');
       stockTab.textContent = ticker;
       stockTab.classList.remove('hidden');
-      location.hash = '#/stock/' + ticker;
+      location.hash = '#/stock/' + encodeURIComponent(ticker) + (watchlistId ? `?wl=${encodeURIComponent(watchlistId)}` : '');
     });
   });
 }
 
 function buildRow(s) {
-  const p = wlPrices[s.ticker];
+  const p = wlPrices[priceKeyFor(s)];
   const price = p?.price;
   const c = curr(s);
 
@@ -385,11 +470,18 @@ function buildRow(s) {
   const rowClass = inZone ? 'row-in-zone' : nearStop ? 'row-attention' : '';
 
   const sig = getSignal(s);
+  const sourceTag = wlWatchlists.length > 1
+    ? `<span class="wl-source-pill">${s._watchlistName || titleizeWatchlist(s._watchlistId)}</span>`
+    : '';
+  const metaLine = [s.market, s.company_name].filter(Boolean).join(' · ');
 
-  return `<tr class="${rowClass}" data-ticker="${s.ticker}">
+  return `<tr class="${rowClass}" data-ticker="${s.ticker}" data-watchlist-id="${s._watchlistId || ''}">
     <td>
       <span style="font-weight:700">${s.ticker}</span>
-      <br><span style="font-size:11px;color:#555">${s.market} · ${s.company_name || ''}</span>
+      <div class="wl-row-meta">
+        <span>${metaLine || '—'}</span>
+        ${sourceTag}
+      </div>
     </td>
     <td>${priceCell}</td>
     <td>${price != null ? proximityBar(s, price) : '—'}</td>
@@ -405,16 +497,33 @@ function buildRow(s) {
 // ── Watchlist data load ───────────────────────────────────────────────────────
 async function loadWatchlist() {
   const data = await get('/api/watchlists');
+  wlPrices = {};
   wlAllStocks = [];
+  wlWatchlists = [];
   if (data) for (const wl of data) {
-    if (wl.data?.watchlist) wlAllStocks.push(...wl.data.watchlist);
+    const wlId = wl.id || wl.data?.id || 'watchlist';
+    const wlName = wl.data?.name || titleizeWatchlist(wlId);
+    const entries = (wl.data?.watchlist || []).map((entry, idx) => ({
+      ...entry,
+      market: entry.market || (String(entry.ticker || '').includes('.') ? 'IN' : 'US'),
+      _watchlistId: wlId,
+      _watchlistName: wlName,
+      _rowKey: `${wlId}:${entry.ticker || idx}:${idx}`,
+    }));
+    wlWatchlists.push({
+      id: wlId,
+      name: wlName,
+      activeCount: entries.filter(entry => entry.status !== 'REMOVED').length,
+    });
+    wlAllStocks.push(...entries);
   }
+  if (wlScope !== 'all' && !wlWatchlists.some(wl => wl.id === wlScope)) wlScope = 'all';
 
   // Prices from baked data
   const active = wlAllStocks.filter(s => s.status !== 'REMOVED');
   for (const s of active) {
     const yf = yfSym(s);
-    if (BAKED?.prices?.[yf]) wlPrices[s.ticker] = BAKED.prices[yf];
+    if (BAKED?.prices?.[yf]) wlPrices[yf] = BAKED.prices[yf];
   }
 
   // If live mode, fetch prices
@@ -424,11 +533,12 @@ async function loadWatchlist() {
     if (priceData) {
       for (const s of active) {
         const yf = yfSym(s);
-        if (priceData[yf]) wlPrices[s.ticker] = priceData[yf];
+        if (priceData[yf]) wlPrices[yf] = priceData[yf];
       }
     }
   }
 
+  renderWatchlistScope();
   renderAttnCards();
   renderWatchlist();
 }
@@ -1057,7 +1167,7 @@ function renderThesisCard(s, wlEntry) {
   if (!wlEntry) return '';
   const c = curr(wlEntry);
   const addedPrice = wlEntry.price_at_add ? `${c}${wlEntry.price_at_add}` : '—';
-  const price = wlPrices[s]?.price;
+  const price = wlPrices[priceKeyFor(wlEntry)]?.price;
   const sinceAdd = price && wlEntry.price_at_add ? ((price - wlEntry.price_at_add) / wlEntry.price_at_add * 100) : null;
 
   const cats = (wlEntry.catalysts || []).map(c2 => `<li>${c2}</li>`).join('');
@@ -1079,12 +1189,15 @@ function renderThesisCard(s, wlEntry) {
 }
 
 // ── Stock Detail ──────────────────────────────────────────────────────────────
-async function openStockDetail(ticker) {
+async function openStockDetail(ticker, watchlistId = '') {
   // Find watchlist entry
-  const wlEntry = wlAllStocks.find(s => s.ticker === ticker) || null;
+  const wlEntry =
+    wlAllStocks.find(s => s.ticker === ticker && (!watchlistId || s._watchlistId === watchlistId)) ||
+    wlAllStocks.find(s => s.ticker === ticker) ||
+    null;
   _currentWLEntry = wlEntry;
   const yf = wlEntry ? yfSym(wlEntry) : ticker;
-  const price = wlPrices[ticker];
+  const price = wlEntry ? wlPrices[priceKeyFor(wlEntry)] : wlPrices[ticker];
 
   // Stock header
   const header = document.getElementById('stockHeader');
@@ -1096,7 +1209,7 @@ async function openStockDetail(ticker) {
     <span class="sh-back" onclick="history.back()">← Back</span>
     <div>
       <div class="sh-sym">${ticker}</div>
-      <div class="sh-name">${wlEntry?.company_name || ''} <span class="badge badge-${(wlEntry?.status || '').toLowerCase()}">${wlEntry?.status || ''}</span></div>
+      <div class="sh-name">${wlEntry?.company_name || ''} <span class="badge badge-${(wlEntry?.status || '').toLowerCase()}">${wlEntry?.status || ''}</span>${wlEntry?._watchlistName ? ` <span class="wl-source-pill">${wlEntry._watchlistName}</span>` : ''}</div>
     </div>
     ${price ? `<div class="sh-divider"></div><div><div class="sh-price">${c}${price.price.toLocaleString()}</div>${changeHtml}</div>` : ''}
     ${wlEntry?.score ? `<div class="sh-divider"></div><div class="sh-meta-item"><div class="sh-meta-label">Score</div><div class="sh-meta-value" style="color:#00d4ff">${wlEntry.score}</div></div>` : ''}
