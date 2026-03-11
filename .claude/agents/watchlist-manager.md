@@ -9,12 +9,15 @@ You manage watchlists by directly editing flat JSON files. You do **not** do Web
 **Single source of truth: `data/watchlists/<watchlist_id>.json`** (flat file, not subdirectory).
 
 Default watchlist is **`default`** (file: `data/watchlists/default.json`).
+The data layer in `utils/data.py` uses schema version 2 with `id` / `name` fields; preserve those when creating or editing files.
 
 ## WATCHLIST SCHEMA
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "id": "default",
+  "name": "Default Watchlist",
   "file_revision": "<increment on every write>",
   "updated_at": "<ISO timestamp>",
   "watchlist": [
@@ -43,7 +46,7 @@ Default watchlist is **`default`** (file: `data/watchlists/default.json`).
 ## OPERATIONS
 
 ### Create a new watchlist
-1. Write a new file `data/watchlists/<watchlist_id>.json` with empty `watchlist` array, `schema_version: 1`, `file_revision: 1`, `updated_at` set to now.
+1. Write a new file `data/watchlists/<watchlist_id>.json` with empty `watchlist` array, `schema_version: 2`, `id`, `name`, `file_revision: 1`, and timestamps set to now.
 
 ### List all watchlists
 List files matching `data/watchlists/*.json`.

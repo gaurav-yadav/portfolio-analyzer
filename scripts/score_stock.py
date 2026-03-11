@@ -25,8 +25,50 @@ from utils.config import (
     THRESHOLDS,
     GATES,
     get_component_weights,
+    get_horizon_weights,
     get_recommendation,
 )
+
+
+def resolve_symbol_yf(symbol: str, base_path: Path, holdings: list[dict]) -> str:
+    """Resolve a user-supplied symbol to the correct Yahoo Finance symbol.
+
+    Rules:
+    - If the user already passed a suffix/formatted symbol and matching files exist, keep it.
+    - If a bare ticker has an exact local technical/research/cache file, treat it as US-style.
+    - If holdings contain a matching symbol, use that holding's symbol_yf.
+    - Otherwise default bare Indian symbols to `.NS`.
+    """
+    raw = symbol.strip().upper()
+    if not raw:
+        return raw
+
+    # Exact local artifact match wins; this handles US symbols like TER, NVDA.
+    exact_paths = [
+        base_path / "data" / "technical" / f"{raw}.json",
+        base_path / "data" / "fundamentals" / f"{raw}.json",
+        base_path / "data" / "news" / f"{raw}.json",
+        base_path / "data" / "legal" / f"{raw}.json",
+        base_path / "cache" / "ohlcv" / f"{raw}.parquet",
+    ]
+    if any(path.exists() for path in exact_paths):
+        return raw
+
+    # Preserve explicit exchange suffixes / already-formatted symbols.
+    if "." in raw:
+        return raw
+
+    # Use holdings when available.
+    for holding in holdings:
+        if str(holding.get("symbol_yf") or "").strip().upper() == raw:
+            return raw
+        if str(holding.get("symbol") or "").strip().upper() == raw:
+            held_yf = str(holding.get("symbol_yf") or "").strip().upper()
+            if held_yf:
+                return held_yf
+
+    # Fall back to Indian default for bare local symbols.
+    return f"{raw}.NS"
 
 
 def compute_confidence(scores: dict) -> str:
@@ -144,6 +186,47 @@ def apply_gates(
             flags.append("strong_buy_alignment_failed")
 
     return recommendation, flags
+
+
+def compute_horizon_scores(
+    technical_score: float | None,
+    fundamental_score: float | None,
+    news_score: float | None,
+    has_severe_red_flag: bool,
+) -> tuple[dict, str | None]:
+    """Compute single-stock time-horizon composites from component scores.
+
+    Returns:
+        (horizon_scores, best_fit_horizon)
+    """
+    if technical_score is None or fundamental_score is None or news_score is None:
+        return {}, None
+
+    component_scores = {
+        "technical": technical_score,
+        "fundamental": fundamental_score,
+        "news_sentiment": news_score,
+    }
+
+    horizon_scores = {}
+    for horizon, weights in get_horizon_weights().items():
+        raw_score = sum(component_scores[k] * weights[k] for k in weights)
+        if has_severe_red_flag:
+            raw_score = min(raw_score, 5.0)
+        horizon_scores[horizon] = {
+            "score_10": round(raw_score, 1),
+            "score_100": round(raw_score * 10, 1),
+            "weights": weights,
+        }
+
+    if not horizon_scores:
+        return {}, None
+
+    best_fit = max(
+        horizon_scores.items(),
+        key=lambda item: item[1]["score_100"],
+    )[0]
+    return horizon_scores, best_fit
 
 
 def get_rsi_description(rsi: float | None) -> str:
@@ -346,12 +429,12 @@ def score_stock(symbol: str, broker: str | None = None, profile: str | None = No
     """
     base_path = Path(__file__).parent.parent
 
-    # Normalize symbol for file lookup
-    symbol_clean = symbol.replace(".NS", "").replace(".BO", "")
-    symbol_yf = symbol if "." in symbol else f"{symbol}.NS"
-
     # Load holdings data
     holdings = load_json(base_path / "data" / "holdings.json") or []
+
+    # Normalize symbol for file lookup
+    symbol_yf = resolve_symbol_yf(symbol, base_path, holdings)
+    symbol_clean = symbol_yf.replace(".NS", "").replace(".BO", "")
 
     # Find matching holding (optionally filter by broker)
     if broker:
@@ -466,6 +549,13 @@ def score_stock(symbol: str, broker: str | None = None, profile: str | None = No
 
     overall_score = round(overall_score, 1)
 
+    horizon_scores, best_fit_horizon = compute_horizon_scores(
+        technical_score,
+        fundamental_score,
+        news_score,
+        has_red_flag,
+    )
+
     # Skip recommendations when data is incomplete
     if coverage_count < 4:
         recommendation = "INSUFFICIENT DATA"
@@ -545,6 +635,8 @@ def score_stock(symbol: str, broker: str | None = None, profile: str | None = No
         "coverage_pct": coverage_pct,
         "gate_flags": ", ".join(gate_flags) if gate_flags else "",
         "red_flags": ", ".join(red_flags) if red_flags else "",
+        "horizon_scores": horizon_scores,
+        "best_fit_horizon": best_fit_horizon or "",
         "summary": summary,
     }
 

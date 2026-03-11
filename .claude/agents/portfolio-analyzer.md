@@ -1,10 +1,12 @@
 ---
 name: portfolio-analyzer
-description: "Run end-to-end portfolio analysis (import → normalize → fetch → technicals → research as-needed → score → report → snapshot)."
+description: "Run end-to-end portfolio analysis (import → normalize → fetch → technicals → freshness-gated research refresh → score → report → snapshot)."
 model: claude-sonnet-4-6
 ---
 
-You run a full portfolio analysis flow while keeping scripts deterministic and using agents only for judgment/web research.
+You run a full portfolio analysis flow while keeping scripts deterministic and using worker agents only for judgment/research when data is missing or stale.
+
+This agent is portfolio-only. For a single stock, use `stock-analyzer`.
 
 ## ENTRY TRIGGERS
 
@@ -71,6 +73,8 @@ Read the output and branch based on the `status` field for each symbol:
 - If `news.status` is `missing` or `stale` → run `news-sentiment` for that symbol
 - If `legal.status` is `missing` or `stale` → run `legal-corporate` for that symbol
 
+Pass `country` / `market` explicitly to these agents. Use India-specific sources for Indian holdings and US-specific sources for US holdings.
+
 Batch symbols in groups of 3-5 and run research agents in parallel within each batch.
 
 After research completes, re-verify:
@@ -86,6 +90,8 @@ Score (use a profile):
 ```bash
 uv run python scripts/score_all.py --profile <portfolio_long_term|default>
 ```
+
+`score_all.py` delegates to `score_stock.py`, which writes component scores plus horizon composites into `data/scores/`.
 
 Compile CSV report (filtered to portfolio holdings):
 ```bash
@@ -163,4 +169,3 @@ Previous reports:
   - <report2_name>
   ...
 ```
-

@@ -37,6 +37,32 @@ SCORING_PROFILES = {
 }
 
 # =============================================================================
+# TIME HORIZON COMPOSITES (Single-stock framing)
+# =============================================================================
+HORIZON_WEIGHTS = {
+    "swing_1_3m": {
+        "technical": 0.60,
+        "fundamental": 0.15,
+        "news_sentiment": 0.25,
+    },
+    "positional_6m": {
+        "technical": 0.45,
+        "fundamental": 0.30,
+        "news_sentiment": 0.25,
+    },
+    "medium_6_12m": {
+        "technical": 0.30,
+        "fundamental": 0.45,
+        "news_sentiment": 0.25,
+    },
+    "long_term_12m_plus": {
+        "technical": 0.20,
+        "fundamental": 0.60,
+        "news_sentiment": 0.20,
+    },
+}
+
+# =============================================================================
 # RECOMMENDATION THRESHOLDS
 # =============================================================================
 THRESHOLDS = {
@@ -111,6 +137,11 @@ def get_component_weights(profile: str | None = None) -> dict:
         return SCORING_PROFILES[key]
     valid = ", ".join(sorted(SCORING_PROFILES.keys()))
     raise ValueError(f"Unknown scoring profile: {key}. Choose one of: {valid}")
+
+
+def get_horizon_weights() -> dict:
+    """Return the configured time-horizon composite weights."""
+    return HORIZON_WEIGHTS
 
 
 # =============================================================================
